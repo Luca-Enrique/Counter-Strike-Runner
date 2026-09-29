@@ -1,0 +1,36 @@
+# Entorno virtual
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Herramientas
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Editores
+.vscode/
+.idea/
+*.swp
+
+# Sistema operativo
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# En este proyecto NO se ignoran a proposito:
+#   ranking.txt   -> es un entregable de la consigna
+#   ranking.html  -> es un entregable de la consigna
