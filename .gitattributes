@@ -1,0 +1,16 @@
+# Normaliza los finales de linea en todo el repositorio.
+# Se guardan como LF en git y se mantienen LF en el area de trabajo,
+# para que no aparezca el aviso "LF will be replaced by CRLF" en cada commit
+# ni haya diferencias falsas entre maquinas.
+* text=auto eol=lf
+
+# Archivos de assets: binarios, nunca se tocan.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.wav  binary
+*.ogg  binary
+*.mp3  binary
+*.ttf  binary
