@@ -84,6 +84,87 @@ tener un límite para que no sea imposible".
 La altura del salto sale de la fórmula `altura = v² / (2 · g)`. Con los valores
 de arriba, `900² / (2 · 2400) = 168.75` píxeles.
 
+### Por qué el salto usa la solución exacta y no suma velocidad
+
+La altura se calcula con la solución cerrada de la caída libre:
+
+```
+y(t) = y₀ + v₀ · t + (g / 2) · t²
+```
+
+y no sumando la velocidad fotograma a fotograma. La diferencia parece un detalle
+pero importa por dos razones:
+
+- **La altura es la misma siempre.** La fórmula da exactamente 168.75 px. Sumando
+  a mano, el punto más alto cae 7.75 px más bajo a 60 por segundo, y 16 px más
+  bajo a 30: la altura del salto dependería de la máquina.
+- **Es el mismo código a cualquier tasa de fotogramas.** `personaje.py` calcula
+  la posición a partir del tiempo transcurrido, no de cuántos fotogramas
+  pasaron.
+
+El tiempo en el aire se mide de forma continua (0.75 s), y el rectángulo se
+coloca recién redondeado a píxel entero. Guardar la cuenta en coma flotante y
+redondear solo al dibujar evita que el redondeo se acumule.
+
+## 2.1 El personaje
+
+`personaje.py` tiene la física y la animación. No sabe qué escena lo usa ni le
+interesan los obstáculos: la escena le dice cuándo saltar o agachar y él solo
+avanza.
+
+| Estado | Qué hace |
+| --- | --- |
+| Correr | Siempre que está apoyado. Ciclo de 6 fotogramas a 12 por segundo. |
+| Saltar | Un toque de `ESPACIO`. En el aire no hace nada: no hay doble salto. |
+| Agachado | `ABAJO` baja el rectángulo de 96 a 56 px. **Solo en el suelo.** |
+
+Salir de un agachado con `ESPACIO` levanta al personaje antes de saltar, así que
+saltar y agacharse no se contradicen.
+
+El agachado no aplica en el aire porque no hay sprite de caída: se usaría el de
+salto y no se vería la diferencia.
+
+### El rectángulo manda
+
+El rectángulo de colisión **nunca** se deduce del ancho del fotograma que se
+está dibujando. Hay dos razones, y las dos son bugs reales que se evitaron:
+
+- **El ancho no se recalcula por fotograma.** Los seis fotogramas de correr
+  tienen anchos distintos (de 84 a 93 px). Si el rectángulo tomara el ancho de
+  cada uno, engordaría y adelgazaría en cada paso de la animación y el
+  personaje parpadearía. El ancho sale del fotograma **más ancho**.
+- **El agachado no achica el ancho.** Solo el alto. Si la hitbox se angostara al
+  agacharse, pasarían obstáculos que en realidad golpean.
+
+El sprite se dibuja centrado sobre el rectángulo, nunca al revés. Así lo que se
+ve y lo que colisiona son siempre lo mismo.
+
+### Los sprites
+
+| Estado | Alto en pantalla |
+| --- | --- |
+| Correr | 96 px |
+| Saltar | 96 px |
+| Agachado | 56 px |
+
+Los PNG miden lo que miden: la escala **preserva la proporción** y se hace por
+alto, salvo el proyectil, que es la excepción y se escala por largo (su
+proporción es de 3.85:1). Por eso el tamaño de los archivos es irrelevante y no
+hizo falta redimensionar nada a mano.
+
+Al cargar, cada imagen se recorta con `get_bounding_rect()` para sacarle el
+margen transparente que traen los sprites de personaje y obstáculo. Sin ese
+recorte, el rectángulo de colisión sería más grande que el dibujo y golpearía
+cosas que no se ven.
+
+### Si falta un archivo
+
+`cargar_textura()` devuelve `None` si el archivo no existe, y el estado se dibuja
+como un rectángulo de color del mismo tamaño. El juego arranca siempre, aunque
+falte un asset. El recorte con `smoothscale` y no con `scale` es por lo mismo:
+los sprites de origen son muy grandes y hay que reducirlos mucho, y el
+filtrado evita que queden bordes irregulares.
+
 ## 3. Distribución, color y tipografía
 
 Estos valores **no salen de la consigna ni de la temática**: se eligieron para que
@@ -93,6 +174,9 @@ marcados como `PROPUESTA` para distinguirlos de los que sí están fijados.
 | Constante | Valor | Motivo |
 | --- | --- | --- |
 | Altura del suelo | 460 px | Deja 80 px de piso dibujado debajo de la línea. |
+| Posición horizontal del jugador | 120 px | Fija: lo que se desplaza es el escenario, no el jugador. |
+| Velocidad de la animación de correr | 12 fotogramas/s | Con 6 fotogramas, el ciclo dura medio segundo. |
+| Proporción del personaje sin sprite | 0.9 | Ancho de reserva cuando no hay imagen. |
 | Tamaño de fuente de título | 64 px | El título tiene que leerse de lejos. |
 | Tamaño de fuente de texto | 32 px | Controles y mensajes. |
 | Tamaño de fuente de puntaje | 28 px | Va en una esquina, no compite con el juego. |
@@ -100,6 +184,7 @@ marcados como `PROPUESTA` para distinguirlos de los que sí están fijados.
 | Color del suelo | RGB(58, 62, 72) | Un tono más claro que el fondo, da profundidad. |
 | Color del texto | RGB(232, 236, 240) | Blanco apagado, no cansa la vista. |
 | Color de acento | RGB(240, 196, 25) | Amarillo de recreativa, solo para lo que llama la atención. |
+| Color del personaje sin sprite | RGB(86, 122, 164) | Azul apagado. Solo aparece si falta un archivo. |
 | Color de las barras | RGB(0, 0, 0) | No es un color del juego: es la ventana donde no entra la imagen. |
 
 La tipografía usa por ahora la fuente que viene con Pygame, así que el juego no
@@ -193,6 +278,7 @@ datos y la generación del ranking.
 ```text
 Counter-Strike-Runner/
 ├── juego.py             # punto de entrada: ventana, bucle y escenas
+├── personaje.py         # la física y la animación del jugador
 ├── constantes.py        # todos los valores ajustables
 ├── pruebas.py           # verificaciones automáticas
 ├── generar_ranking.py   # lee ranking.txt y arma ranking.html (no importa pygame)
@@ -205,3 +291,8 @@ Counter-Strike-Runner/
 
 `generar_ranking.py` no importa Pygame a propósito: así se puede ejecutar y
 probar por separado, sin levantar la ventana del juego.
+
+`personaje.py` está aparte de `juego.py` por la misma razón: la física y la
+animación del jugador se pueden probar sin abrir una ventana ni construir
+escenas. `juego.py` se queda con lo que le corresponde: ventana, bucle, escenas
+y el reparto del trabajo entre ellas.
