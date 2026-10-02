@@ -7,7 +7,25 @@ proyecto usa [SemVer](https://semver.org/lang/es/).
 
 ## [No publicado]
 
-Todavía no hay entregas de código.
+### Agregado
+
+- Base del motor del juego, sobre la rama `feat/base-motor`:
+  - `constantes.py` con los valores de `docs/ESPECIFICACION.md` (lienzo
+    virtual, fotogramas objetivo, tope de delta, gravedad, velocidad de salto,
+    topes de dificultad, puntaje y umbrales de zona), más los colores, la
+    posición del suelo y los tamaños de fuente, marcados como propuesta.
+  - `juego.py` con la ventana redimensionable, el lienzo virtual de 960×540
+    escalado con letterbox, el tope de delta y el despacho de escenas. Las
+    pantallas de título y de partida ya cambian con `ESPACIO` y `ESC`.
+  - `pruebas.py` con 10 verificaciones de la escala, el centrado del
+    letterbox, el recorte de delta y la altura del salto.
+
+### Corregido
+
+- La imagen escalada se pasa por un pixel en ventanas de ancho "raro" (por
+  ejemplo 500 px). El tamaño destino ahora se redondea a píxeles enteros antes
+  de blitear, así que el error de redondeo de la división no puede empujar la
+  imagen fuera de la ventana.
 
 ## [0.1.0] - 2026-09-29
 
