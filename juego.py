@@ -11,9 +11,13 @@ La logica esta dividida en cuatro partes:
 3. las escenas, una por pantalla, con la misma forma (eventos, actualizacion,
    dibujo) para que el bucle no sepa cual esta activa;
 4. el Juego, que es el bucle: eventos, actualizacion y dibujo, en ese orden.
+
+El personaje vive aparte, en personaje.py, porque tiene fisica y animacion
+propias y no depende de ninguna escena.
 """
 import pygame
 import constantes
+import personaje
 
 # --- Funciones puras -----------------------------------------------------
 # No tocan pygame ni guardan estado: son las que se prueban en pruebas.py.
@@ -51,6 +55,14 @@ def calcular_destino(ancho_ventana, alto_ventana):
         ancho,
         alto,
     )
+
+def calcular_puntaje(segundos):
+    """El puntaje son los segundos que llevas vivo, por diez.
+
+    Los segundos se cortan a entero a proposito: si no, el numero cambiaria en
+    cada fotograma y no se podria leer de un vistazo.
+    """
+    return int(segundos) * constantes.PUNTOS_POR_SEGUNDO
 
 # --- Imagen virtual ------------------------------------------------------
 class Lienzo:
@@ -162,22 +174,45 @@ class EscenaTitulo(Escena):
         )
 
 class EscenaJuego(Escena):
-    """Escena de partida, todavia sin fisica.
+    """Escena de partida: el personaje, el puntaje y el suelo.
 
-    Por ahora solo dibuja el suelo y el puntaje, para poder probar que el
-    cambio de escena funciona. El salto, los obstaculos y la dificultad
-    llegan en sus propias ramas.
+    Todavia no hay obstaculos ni dificultad. Esos llegan en sus propias ramas.
     """
 
     def __init__(self, juego):
         super().__init__(juego)
         self.puntaje = 0
+        self.tiempo_vivido = 0.0
+        self.personaje = None
+
+    def inicializar(self):
+        """Carga los sprites y arma el personaje.
+
+        Si faltan archivos, cargar_texturas devuelve None y el personaje se
+        dibuja como un rectangulo de color. El juego arranca igual.
+        """
+        self.personaje = personaje.Personaje(
+            texturas=personaje.cargar_texturas("CT")
+        )
 
     def manejar_eventos(self, evento):
         if evento.type == pygame.KEYDOWN and evento.key == pygame.K_ESCAPE:
             self.juego.cambiar_escena("titulo")
+        elif evento.type == pygame.KEYDOWN and evento.key == pygame.K_SPACE:
+            self.personaje.saltar()
+        elif evento.type == pygame.KEYUP and evento.key == pygame.K_DOWN:
+            self.personaje.agachar(False)
+        elif evento.type == pygame.KEYDOWN and evento.key == pygame.K_DOWN:
+            self.personaje.agachar(True)
+
+    def actualizar(self, delta):
+        self.tiempo_vivido += delta
+        self.puntaje = calcular_puntaje(self.tiempo_vivido)
+        self.personaje.actualizar(delta)
 
     def dibujar(self, superficie):
+        self.personaje.dibujar(superficie)
+
         pygame.draw.line(
             superficie,
             constantes.COLOR_SUELO,
