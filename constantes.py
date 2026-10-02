@@ -71,6 +71,54 @@ TAMANO_FUENTE_TITULO = 64
 TAMANO_FUENTE_MEDIO = 32
 TAMANO_FUENTE_PUNTAJE = 28
 
+# Posicion horizontal del jugador. Es fija: el personaje no se mueve de lado,
+# lo que se desplaza es el escenario.
+JUGADOR_X = 120
+
+
+# --- Personaje y animacion ------------------------------------------------
+# PROPUESTA. Alturas con las que se dibujan los sprites en el lienzo virtual.
+
+# Los sprites miden lo que miden, pero el juego los escala a estos altos. La
+# escala preserva la proporcion, asi que el ancho sale del alto.
+ALTO_PERSONAJE = 96
+ALTO_PERSONAJE_AGACHADO = 56
+
+# Ancho con el que se arma el rectangulo del personaje cuando no hay sprite
+# (por ejemplo en las pruebas). Si hay sprite manda el ancho real de la
+# imagen, para que el dibujo y la colISION coincidan.
+PROPORCION_PERSONAJE = 0.9
+
+# Fotogramas del ciclo de correr, y a cuantos por segundo avanzan.
+FOTOGRAMAS_CORRER = 6
+FOTOGRAMAS_ANIMACION_POR_SEGUNDO = 12
+
+
+# --- Obstaculos ----------------------------------------------------------
+# PROPUESTA. Alturas con las que se dibujan, para que todos los obstaculos
+# tengan un tamano coherente entre si.
+#
+# Los obstaculos todavia no existen en el juego: estas constantes quedan
+# fijadas ahora para que la rama que los implemente no tenga que tocar este
+# archivo.
+
+ALTO_OBSTACULO_CAJA = 56
+ALTO_OBSTACULO_BARRIL = 64
+ALTO_OBSTACULO_BARRICADA = 44
+ALTO_OBSTACULO_C4 = 36
+ALTO_OBSTACULO_PERSONA = 96
+
+# El proyectil es la excepcion: su proporcion es de 3.85:1, muy alargado, asi
+# que se escala por largo y no por alto.
+LARGO_PROYECTIL = 56
+ALTO_PROYECTIL = 15
+
+
+# --- Puntaje -------------------------------------------------------------
+# PROPUESTA. El puntaje son los segundos que llevas vivo, por diez. La cuenta
+# se corta a segundos enteros para que el numero no cambie cada fotograma.
+PUNTOS_POR_SEGUNDO = 10
+
 
 # --- Colores -------------------------------------------------------------
 # PROPUESTA. Placeholders para las zonas. Reemplazar cuando se elija la
@@ -80,6 +128,10 @@ COLOR_FONDO = (24, 26, 32)
 COLOR_SUELO = (58, 62, 72)
 COLOR_TEXTO = (232, 236, 240)
 COLOR_ACENTO = (240, 196, 25)
+
+# Color del rectangulo que reemplaza al personaje cuando no hay sprite. El
+# juego tiene que funcionar aunque falte un archivo.
+COLOR_PERSONAJE_SIN_SPRITE = (86, 122, 164)
 
 # Negro puro de las barras del letterbox. No es un color del juego: es el
 # fondo de la ventana donde no entra la imagen.
