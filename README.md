@@ -39,6 +39,20 @@ pip install -r requirements.txt
 python juego.py
 ```
 
+## Pruebas
+
+```bash
+python pruebas.py
+```
+
+Devuelve `0` si todo pasa y `1` si algo falla, así que sirve para automatizar el
+control. Solo verifica funciones puras, sin abrir ventana: corre incluso en una
+máquina sin pantalla.
+
+Las pruebas cubren el escalado con letterbox, el centrado de la imagen, el
+recorte de delta y la altura del salto. Cuando se agregue el personaje, la física
+y el ranking, se suman las suyas.
+
 ## Estructura de archivos
 
 ```text
@@ -119,4 +133,11 @@ tiene todo lo integrado y andando, se abre la PR de `develop` contra `main`.
 
 ## Changelog
 
-Los cambios relevantes se anotan en [`CHANGELOG.md`](CHANGELOG.md).
+Los cambios del proyecto se anotan en [`CHANGELOG.md`](CHANGELOG.md), de la versión
+más reciente a la más antigua.
+
+Cada versión es un encabezado `## X.Y.Z - AAAA-MM-DD` con la fecha del día en que
+se escribió, y abajo los cambios agrupados en `Agregado` y `Corregido`. No hay
+tags de git ni releases: el número de versión vive únicamente en ese archivo.
+
+Cuando se termina una tanda de trabajo, se agrega un encabezado nuevo arriba.

@@ -31,6 +31,31 @@ juego es idéntico en cualquier resolución, y solo cambia el tamaño de la imag
 Se usa el **menor** de los dos factores de escala (el `min`) para que la imagen
 entre completa. Con `max` se saldría de la ventana.
 
+### Por qué el tamaño destino se redondea
+
+El ancho y el alto de la imagen escalada se redondean a **píxeles enteros** antes
+de dibujarse, y nunca se estiran: si un lado quedara en 0 se lo fuerza a 1.
+
+El redondeo no es cosmético. El factor de escala es el resultado de una división,
+as que casi nunca da un número exacto. En una ventana de 500 px de ancho,
+`960 × 0.5208333333333334` da `500.00000000000006`: un pelo por encima del ancho
+real. Sin redondear, la imagen se saldría de la ventana por una fracción de
+píxel, y la verificación de "entra completa" fallaría por una razón que no se ve
+en la pantalla.
+
+Todo eso vive en `calcular_destino()`, en `juego.py`. Devuelve la posición y el
+tamaño ya redondeados, así que el dibujo solo tiene que pegarla.
+
+### Por qué el guardia de ventana de tamaño cero
+
+En Windows, al minimizar la ventana el sistema manda un `VIDEORESIZE` con tamaño
+`(0, 0)`. `set_mode` no acepta ese valor y levanta una excepción, así que un
+minimizado abortaría el juego.
+
+El tamaño se fuerza a un mínimo de 1×1 y, si la ventana no tiene área útil, no se
+dibuja nada hasta que vuelva a tener tamaño. El juego sigue corriendo por debajo,
+que es lo que se espera de una ventana minimizada.
+
 ### Por qué tope de delta
 
 El tiempo entre fotogramas se mide y se convierte a segundos para que toda la
@@ -59,7 +84,29 @@ tener un límite para que no sea imposible".
 La altura del salto sale de la fórmula `altura = v² / (2 · g)`. Con los valores
 de arriba, `900² / (2 · 2400) = 168.75` píxeles.
 
-## 3. Formato de `ranking.txt`
+## 3. Distribución, color y tipografía
+
+Estos valores **no salen de la consigna ni de la temática**: se eligieron para que
+haya algo visible en pantalla y se ajustan jugando. En `constantes.py` están
+marcados como `PROPUESTA` para distinguirlos de los que sí están fijados.
+
+| Constante | Valor | Motivo |
+| --- | --- | --- |
+| Altura del suelo | 460 px | Deja 80 px de piso dibujado debajo de la línea. |
+| Tamaño de fuente de título | 64 px | El título tiene que leerse de lejos. |
+| Tamaño de fuente de texto | 32 px | Controles y mensajes. |
+| Tamaño de fuente de puntaje | 28 px | Va en una esquina, no compite con el juego. |
+| Color de fondo | RGB(24, 26, 32) | Casi negro azulado, para que los sprites resalten. |
+| Color del suelo | RGB(58, 62, 72) | Un tono más claro que el fondo, da profundidad. |
+| Color del texto | RGB(232, 236, 240) | Blanco apagado, no cansa la vista. |
+| Color de acento | RGB(240, 196, 25) | Amarillo de recreativa, solo para lo que llama la atención. |
+| Color de las barras | RGB(0, 0, 0) | No es un color del juego: es la ventana donde no entra la imagen. |
+
+La tipografía usa por ahora la fuente que viene con Pygame, así que el juego no
+depende de ningún archivo de texto. Si más adelante se agrega una fuente
+descargada, `cargar_fuentes()` es el único lugar que hay que tocar.
+
+## 4. Formato de `ranking.txt`
 
 Un registro por línea, con los campos separados por punto y coma:
 
@@ -100,7 +147,7 @@ historial real, y es más barato de explicar.
 - Se **agrega** al final con modo `append`. Nunca se sobreescribe: el ranking
   es histórico.
 
-## 4. `ranking.html`
+## 5. `ranking.html`
 
 ### Ordenamiento
 
@@ -137,7 +184,7 @@ Con los cuatro registros de ejemplo, la tabla queda:
 navegador. Los estilos viven en `estilos.css`, un archivo aparte, para que la
 página tenga forma aunque el HTML se genere desde Python.
 
-## 5. Estructura de archivos
+## 6. Estructura de archivos
 
 La consigna propone una estructura mínima y permite separar en más módulos,
 siempre que se respeten las tres responsabilidades: el juego, el guardado de
