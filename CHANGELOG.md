@@ -19,6 +19,10 @@ proyecto usa [SemVer](https://semver.org/lang/es/).
     pantallas de título y de partida ya cambian con `ESPACIO` y `ESC`.
   - `pruebas.py` con 10 verificaciones de la escala, el centrado del
     letterbox, el recorte de delta y la altura del salto.
+- Los 28 sprites del juego, en `assets/`, sobre la rama `chore/assets`:
+  personajes CT y T con sus animaciones de correr, saltar y agacharse; los
+  obstáculos caja, barril, barricada, C4, persona CT, persona T y proyectil
+  volador; y el suelo con los cuatro fondos de zona.
 
 ### Corregido
 
