@@ -65,7 +65,7 @@ temporales.
 | Rama | Rol |
 | --- | --- |
 | `main` | El juego final y funcional. **Nunca se commitea directo.** Entra únicamente por Pull Request desde `develop`. |
-| `develop` | El laboratorio. Acá se prueban las_PR_ de todas las ramas de trabajo en conjunto, antes de promote_ nada. |
+| `develop` | El laboratorio. Acá se prueban las PR de todas las ramas de trabajo en conjunto, antes de integrar nada. |
 
 ### Reglas
 
