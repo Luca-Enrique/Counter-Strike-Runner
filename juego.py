@@ -98,6 +98,41 @@ class Lienzo:
         ventana.blit(imagen, (x, y))
         pygame.display.flip()
 
+# --- Los dos equipos ------------------------------------------------------
+# docs/TEMATICA.md pide que el jugador elija entre CT y T al empezar, y el
+# equipo elegido es el campo 3 de ranking.txt.
+
+EQUIPOS = ("CT", "T")
+
+NOMBRES_DE_EQUIPO = {
+    "CT": "COUNTER-TERRORIST",
+    "T": "TERRORIST",
+}
+
+# Los mismos sprites que despues van a ser obstaculos, para que la eleccion
+# muestre exactamente la misma cara que se va a ver jugando.
+COLOR_DE_EQUIPO = {
+    "CT": (86, 122, 164),
+    "T": (196, 152, 84),
+}
+
+RUTA_PERSONA_OBSTACULO = "assets/obstaculos/persona_{}.png"
+
+
+def cargar_retratos():
+    """El retrato de cada equipo, sin escalar todavia.
+
+    Si falta el archivo devuelve None para ese equipo, y la pantalla lo dibuja
+    como un rectangulo de color. La seleccion tiene que poder verse siempre.
+    """
+    retratos = {}
+    for equipo in EQUIPOS:
+        retratos[equipo] = personaje.cargar_textura_original(
+            RUTA_PERSONA_OBSTACULO.format(equipo.lower())
+        )
+    return retratos
+
+
 # --- Textos --------------------------------------------------------------
 def cargar_fuentes():
     """Crea las fuentes del juego.
@@ -147,31 +182,141 @@ class Escena:
         """Pinta la escena en la imagen virtual."""
 
 class EscenaTitulo(Escena):
-    """Pantalla de inicio. Es la que se ve al abrir el juego."""
+    """Pantalla de inicio. Es la que se ve al abrir el juego.
+
+    Muestra solo el titulo. Los controles y la eleccion de personaje van en la
+    pantalla siguiente.
+    """
 
     def manejar_eventos(self, evento):
         if evento.type != pygame.KEYDOWN:
             return
 
         if evento.key in (pygame.K_SPACE, pygame.K_RETURN):
-            self.juego.cambiar_escena("juego")
+            self.juego.cambiar_escena("equipo")
         elif evento.key == pygame.K_ESCAPE:
             self.juego.salir()
 
     def dibujar(self, superficie):
-        fuentes = self.juego.fuentes
         dibujar_texto_centrado(
-            superficie, "COUNTER-STRIKE: RUNNER",
-            fuentes["titulo"], constantes.COLOR_TEXTO, 150,
+            superficie, constantes.TITULO_VENTANA,
+            self.juego.fuentes["titulo"], constantes.COLOR_TEXTO, 240,
+        )
+
+class EscenaEquipo(Escena):
+    """Pantalla de eleccion de personaje: CT o T.
+
+    Los dos quedan a la vista y se elige con un click sobre el que se quiere.
+    El equipo elegido queda en juego.equipo, que despues lo lee la escena de
+    partida para cargar los sprites y lo usara el ranking.
+    """
+
+    def __init__(self, juego):
+        super().__init__(juego)
+        self.retratos = {}
+
+    def inicializar(self):
+        if not self.juego.retratos_equipo:
+            self.juego.retratos_equipo = cargar_retratos()
+
+    def manejar_eventos(self, evento):
+        if evento.type == pygame.KEYDOWN and evento.key == pygame.K_ESCAPE:
+            self.juego.cambiar_escena("titulo")
+            return
+
+        if evento.type != pygame.MOUSEBUTTONDOWN:
+            return
+
+        if evento.button != constantes.BOTON_IZQUIERDO:
+            return
+
+        # El click se decide por la mitad de la pantalla: izquierda CT,
+        # derecha T. No se mira el retrato, asi que funciona aunque falte el
+        # archivo y se este viendo un rectangulo de color.
+        if evento.pos[0] < constantes.ANCHO / 2:
+            self._elegir("CT")
+        else:
+            self._elegir("T")
+
+    def _elegir(self, equipo):
+        self.juego.equipo = equipo
+        self.juego.cambiar_escena("juego")
+
+    def dibujar(self, superficie):
+        dibujar_texto_centrado(
+            superficie, "ELEGI TU PERSONAJE",
+            self.juego.fuentes["medio"], constantes.COLOR_ACENTO, 90,
+        )
+
+        for indice, equipo in enumerate(EQUIPOS):
+            self._dibujar_equipo(superficie, equipo, indice)
+
+        dibujar_texto_centrado(
+            superficie,
+            "CLICK PARA ELEGIR    ESPACIO: SALTAR    ABAJO: AGACHARSE",
+            self.juego.fuentes["medio"], constantes.COLOR_TEXTO, 470,
+        )
+
+    def _dibujar_equipo(self, superficie, equipo, indice):
+        """Un equipo: su retrato y su nombre."""
+        centro_x = constantes.ANCHO // 4 + indice * (constantes.ANCHO // 2)
+
+        # La caja donde se comprueba el click. Se ve como un marco, para que se
+        # entienda donde hay que hacer click.
+        caja = pygame.Rect(
+            centro_x - constantes.ANCHO // 4 + 20, 130,
+            constantes.ANCHO // 2 - 40, 260,
+        )
+        pygame.draw.rect(superficie, constantes.COLOR_EQUIPO_BORDE, caja, 2)
+        pygame.draw.rect(
+            superficie, constantes.COLOR_EQUIPO_ELEGIDO, caja.inflate(-4, -4)
+        )
+
+        self._dibujar_retrato(superficie, equipo, caja)
+
+        dibujar_texto_centrado(
+            superficie, NOMBRES_DE_EQUIPO[equipo],
+            self.juego.fuentes["medio"], COLOR_DE_EQUIPO[equipo], 350,
         )
         dibujar_texto_centrado(
-            superficie, "APRETA ESPACIO PARA EMPEZAR",
-            fuentes["medio"], constantes.COLOR_ACENTO, 280,
+            superficie, equipo,
+            self.juego.fuentes["medio"], constantes.COLOR_TEXTO, 385,
         )
-        dibujar_texto_centrado(
-            superficie, "ESPACIO: SALTAR    ABAJO: AGACHARSE    ESC: SALIR",
-            fuentes["medio"], constantes.COLOR_TEXTO, 340,
+
+    def _dibujar_retrato(self, superficie, equipo, caja):
+        """El retrato del equipo, o un rectangulo de color si falta el archivo."""
+        imagen = self._retrato_escalado(equipo, caja.h)
+
+        if imagen is None:
+            pygame.draw.rect(
+                superficie, COLOR_DE_EQUIPO[equipo],
+                pygame.Rect(caja.x + 40, caja.y + 20, caja.w - 80, caja.h - 40),
+            )
+            return
+
+        posicion = imagen.get_rect(center=caja.center)
+        superficie.blit(imagen, posicion)
+
+    def _retrato_escalado(self, equipo, alto):
+        """El retrato del equipo a ese alto, usando el cache si ya estaba.
+
+        El lienzo virtual es siempre de ANCHO x ALTO, asi que el alto pedido
+        casi nunca cambia. Por eso se guarda el resultado y no se reescala en
+        cada fotograma.
+        """
+        cacheado = self.retratos.get(equipo)
+        if cacheado is not None and cacheado.get_height() == alto:
+            return cacheado
+
+        imagen = self.juego.retratos_equipo.get(equipo)
+        if imagen is None:
+            return None
+
+        escalada = pygame.transform.smoothscale(
+            imagen, (round(imagen.get_width() * alto / imagen.get_height()), alto)
         )
+        self.retratos[equipo] = escalada
+        return escalada
 
 class EscenaJuego(Escena):
     """Escena de partida: el personaje, el puntaje y el suelo.
@@ -185,25 +330,58 @@ class EscenaJuego(Escena):
         self.tiempo_vivido = 0.0
         self.personaje = None
 
+        # El agachado se puede pedir con ABAJO o con el click derecho, y son
+        # dos controles independientes. Se guardan por separado para que
+        # soltar uno no levante al personaje si el otro sigue apretado.
+        self.tecla_agacha = False
+        self.raton_agacha = False
+
     def inicializar(self):
         """Carga los sprites y arma el personaje.
 
         Si faltan archivos, cargar_texturas devuelve None y el personaje se
         dibuja como un rectangulo de color. El juego arranca igual.
         """
+        texturas = personaje.cargar_texturas(self.juego.equipo)
         self.personaje = personaje.Personaje(
-            texturas=personaje.cargar_texturas("CT")
+            texturas=personaje.recortar_agachado(texturas)
         )
 
     def manejar_eventos(self, evento):
-        if evento.type == pygame.KEYDOWN and evento.key == pygame.K_ESCAPE:
+        if evento.type == pygame.QUIT:
+            self.juego.salir()
+        elif evento.type == pygame.VIDEORESIZE:
+            self.juego.redimensionar(evento.size)
+        elif evento.type == pygame.KEYDOWN and evento.key == pygame.K_ESCAPE:
             self.juego.cambiar_escena("titulo")
-        elif evento.type == pygame.KEYDOWN and evento.key == pygame.K_SPACE:
+        elif evento.type == pygame.KEYDOWN and evento.key in SALTAR:
             self.personaje.saltar()
-        elif evento.type == pygame.KEYUP and evento.key == pygame.K_DOWN:
-            self.personaje.agachar(False)
-        elif evento.type == pygame.KEYDOWN and evento.key == pygame.K_DOWN:
+        elif evento.type == pygame.KEYDOWN and evento.key in AGACHAR:
+            self.tecla_agacha = True
             self.personaje.agachar(True)
+        elif evento.type == pygame.KEYUP and evento.key in AGACHAR:
+            self.tecla_agacha = False
+            self.personaje.agachar(self.raton_agacha)
+        elif evento.type == pygame.MOUSEBUTTONDOWN:
+            self._boton(evento.button, True)
+        elif evento.type == pygame.MOUSEBUTTONUP:
+            self._boton(evento.button, False)
+
+    def _boton(self, boton, presionado):
+        """Un boton del raton: el izquierdo salta y el derecho agacha."""
+        if boton == constantes.BOTON_IZQUIERDO:
+            if presionado:
+                self.personaje.saltar()
+        elif boton == constantes.BOTON_DERECHO:
+            self._fijar_agachado(presionado)
+
+    def _fijar_agachado(self, del_raton):
+        """Agacha o levanta segun el raton y la tecla, sinon los dos."""
+        if del_raton:
+            self.raton_agacha = True
+        else:
+            self.raton_agacha = False
+        self.personaje.agachar(self.raton_agacha or self.tecla_agacha)
 
     def actualizar(self, delta):
         self.tiempo_vivido += delta
@@ -231,8 +409,15 @@ class EscenaJuego(Escena):
 
 ESCENAS = {
     "titulo": EscenaTitulo,
+    "equipo": EscenaEquipo,
     "juego": EscenaJuego,
 }
+
+# Los controles de docs/TEMATICA.md:
+#   SPACE / ARRIBA / CLICK IZQ -> SALTAR
+#   ABAJO / CLICK DER          -> AGACHARSE
+SALTAR = (pygame.K_SPACE, pygame.K_UP)
+AGACHAR = (pygame.K_DOWN,)
 
 # --- Bucle principal -----------------------------------------------------
 def crear_ventana():
@@ -250,8 +435,17 @@ class Juego:
         self.ventana = crear_ventana()
         self.lienzo = Lienzo()
         self.fuentes = cargar_fuentes()
+        # Las imagenes de los retratos. Se dejan en un Surface vacio para que
+        # cambien de tamano al redimensionar sin volver a leer los archivos.
+        self.retratos = pygame.Surface((1, 1))
+        self.retratos_equipo = {}
         self.reloj = pygame.time.Clock()
         self.corriendo = True
+
+        # El equipo que elige el jugador. Es el campo 3 de ranking.txt, asi que
+        # se guarda aqui y no se vuelve a preguntar.
+        self.equipo = "CT"
+
         self.cambiar_escena("titulo")
 
     def cambiar_escena(self, nombre):

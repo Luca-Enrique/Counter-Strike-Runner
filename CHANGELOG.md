@@ -2,6 +2,41 @@
 
 Los cambios del proyecto, de la versión más reciente a la más antigua.
 
+## 1.2.0 - 2026-10-02
+
+### Agregado
+
+- `personaje.py`: el personaje jugable, con su rectángulo de colisión, la
+  animación de correr de 6 fotogramas, el salto de altura fija de 168.75 px y
+  el agachado. El salto usa la solución exacta de caída libre, así que da la
+  misma altura a 30 que a 60 fotogramas por segundo.
+- El personaje y el puntaje en la escena de partida: el puntaje son los
+  segundos jugados por diez.
+- **Los controles que pedía `docs/TEMATICA.md`**, que faltaban:
+  `ESPACIO`, `ARRIBA` y click izquierdo saltan; `ABAJO` y click derecho
+  agachan. Teclado y ratón se guardan por separado, así que soltar uno no
+  levanta al personaje si el otro sigue apretado.
+- **La caída rápida**: mantener `ABAJO` en el aire pasa la gravedad al doble.
+  La parábola se reinicia desde la posición y la velocidad actuales, así que no
+  hay teletransporte: el ascenso restante se acorta y la bajada se acelera de
+  golpe. El salto normal no cambia.
+- **La pantalla de elección de personaje**, con los dos a la vista y un click
+  para elegir entre `Terrorist` y `Counter-Terrorist`. El equipo queda en
+  `juego.equipo`, que es el campo 3 de `ranking.txt`.
+- Los retratos de la selección salen de los mismos sprites que después son
+  obstáculos (`persona_ct.png` y `persona_t.png`).
+- `pruebas.py` pasa de 10 a 59 verificaciones.
+
+### Corregido
+
+- **El agachado ya no deforma al personaje.** El sprite es un personaje parado
+  encogido: escalado a 56 px quedaba angosto, y estirarlo 1.72 veces lo
+  deformaba más todavía. Ahora se **recorta**: se muestran los 56 píxeles de
+  arriba del fotograma de correr y las piernas quedan ocultas, sin reescalar
+  nada. La cabeza conserva exactamente el mismo tamaño que corriendo.
+- La pantalla de título ya no anuncia los controles: dice solo el nombre del
+  juego. Los controles aparecen en la pantalla de elección.
+
 ## 1.1.0 - 2026-10-02
 
 ### Agregado

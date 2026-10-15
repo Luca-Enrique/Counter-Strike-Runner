@@ -81,8 +81,30 @@ JUGADOR_X = 120
 
 # Los sprites miden lo que miden, pero el juego los escala a estos altos. La
 # escala preserva la proporcion, asi que el ancho sale del alto.
+#
+# La diferencia entre los dos (96 a 56) es la que hace que el personaje pase por
+# debajo de un obstaculo alto sin golpearlo. Esa diferencia es de juego, no
+# estetica: si se perdiera, habria obstaculos imposibles de pasar.
 ALTO_PERSONAJE = 96
 ALTO_PERSONAJE_AGACHADO = 56
+
+# Que parte del personaje se ve agachado, en fraccion de su alto.
+#
+# El sprite de agachar es un personaje PARADO encogido: su proporcion (0.96) es
+# casi la misma que la de correr (0.97), asi que al escalarlo a 56 px queda
+# angosto (54 px) y se ve como que el personaje se achica. Estirarlo lo
+# deformaba 1.72 veces, que es peor.
+#
+# En vez de deformarlo, se le recorta: se muestra del torso para arriba y se
+# ocultan las piernas. La cabeza conserva EXACTAMENTE el mismo tamaño que
+# corriendo, asi que no hay ninguna deformacion en ninguna direccion.
+#
+# 56 / 96 = 0.583. Es la misma fraccion que el alto del agachado, para que el
+# recorte y la hitbox midan lo mismo.
+#
+# PROPUESTA. Es una relacion de a ojo: si al verlo queda raro, se ajusta este
+# numero.
+FRACCION_AGACHADO = 56 / 96
 
 # Ancho con el que se arma el rectangulo del personaje cuando no hay sprite
 # (por ejemplo en las pruebas). Si hay sprite manda el ancho real de la
@@ -92,6 +114,25 @@ PROPORCION_PERSONAJE = 0.9
 # Fotogramas del ciclo de correr, y a cuantos por segundo avanzan.
 FOTOGRAMAS_CORRER = 6
 FOTOGRAMAS_ANIMACION_POR_SEGUNDO = 12
+
+
+# --- Controles -----------------------------------------------------------
+# docs/TEMATICA.md pide SPACE/ARRIBA/CLICK IZQ para saltar y ABAJO/CLICK DER
+# para agacharse. El boton izquierdo es el 1 de Pygame y el derecho el 3.
+
+BOTON_IZQUIERDO = 1
+BOTON_DERECHO = 3
+
+# PROPUESTA. Gravedad de la caida rapida: el doble de la normal.
+#
+# Agachar en el aire multiplica la gravedad por este factor, en vez de ser solo
+# el agachado del suelo. Es lo que hace que el personaje baje mas rapido, y es
+# la mecanica que le da sentido a soltar el control antes de tiempo.
+#
+# Con el doble, el punto mas alto del salto queda en 84 px en vez de 168.75 si
+# se mantiene apretado desde el arranque. Ese recorte es lo que hace que el
+# agachado en el aire sea una decision y no un atajo.
+GRAVEDAD_CAIDA_RAPIDA = 2.0
 
 
 # --- Obstaculos ----------------------------------------------------------
@@ -132,6 +173,15 @@ COLOR_ACENTO = (240, 196, 25)
 # Color del rectangulo que reemplaza al personaje cuando no hay sprite. El
 # juego tiene que funcionar aunque falte un archivo.
 COLOR_PERSONAJE_SIN_SPRITE = (86, 122, 164)
+
+# Marco de las dos cajas de la pantalla de eleccion, y el fondo del recuadro
+# donde va el equipo elegido.
+COLOR_EQUIPO_BORDE = (70, 74, 86)
+COLOR_EQUIPO_ELEGIDO = (46, 50, 60)
+
+# Alto de los retratos de la pantalla de eleccion. Son mas grandes que el
+# personaje en juego para que se vean bien: solo es dibujo, la hitbox no cambia.
+ALTO_RETRATO_EQUIPO = 200
 
 # Negro puro de las barras del letterbox. No es un color del juego: es el
 # fondo de la ventana donde no entra la imagen.

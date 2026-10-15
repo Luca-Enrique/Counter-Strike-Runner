@@ -18,6 +18,32 @@ RUTA_PERSONAJES = "assets/personajes"
 
 # --- Carga de imagenes ---------------------------------------------------
 
+def cargar_textura_original(ruta):
+    """Carga un sprite y le recorta el margen, sin escalarlo todavia.
+
+    El recorte hace falta porque los sprites vienen sobre un lienco mas grande
+    que el dibujo: sin el, la imagen apareceria con un margen invisible.
+
+    Sirve para las imagenes que se dibujan sueltas, que se van a escalar segun
+    el alto de la pantalla.
+
+    Si el archivo no existe, o esta vacio, devuelve None.
+    """
+    try:
+        imagen = pygame.image.load(ruta)
+    except (pygame.error, FileNotFoundError):
+        return None
+
+    caja = imagen.get_bounding_rect()
+    if caja.w == 0 or caja.h == 0:
+        return None
+
+    if (caja.x, caja.y, caja.w, caja.h) != (0, 0, imagen.get_width(), imagen.get_height()):
+        imagen = imagen.subsurface(caja).copy()
+
+    return imagen
+
+
 def cargar_textura(ruta, alto_objetivo, ancho_objetivo=None):
     """Carga un sprite, le recorta el margen y lo escala.
 
@@ -32,17 +58,30 @@ def cargar_textura(ruta, alto_objetivo, ancho_objetivo=None):
     Si el archivo no existe, o esta vacio, devuelve None. El juego tiene que
     andar aunque falte un asset.
     """
-    try:
-        imagen = pygame.image.load(ruta)
-    except (pygame.error, FileNotFoundError):
+    imagen = cargar_textura_original(ruta)
+    if imagen is None:
         return None
 
-    caja = imagen.get_bounding_rect()
-    if caja.w == 0 or caja.h == 0:
-        return None
+    return _escalar(imagen, alto_objetivo, ancho_objetivo)
 
-    if (caja.x, caja.y, caja.w, caja.h) != (0, 0, imagen.get_width(), imagen.get_height()):
-        imagen = imagen.subsurface(caja).copy()
+
+def _escalar(imagen, alto_objetivo, ancho_objetivo=None):
+    """Escala la imagen al alto pedido, o al ancho si se pasa un ancho.
+
+    La proporcion se conserva, salvo que el ancho pedido sea MENOR que el que
+    sale de la proporcion: en ese caso hay que encoger, porque un dibujo que se
+    sale de la hitbox golpearia cosas que no se ven. Ahi se estira hasta el
+    ancho pedido y el alto queda al que de.
+    """
+    escala = (alto_objetivo / imagen.get_height() if ancho_objetivo is None
+              else ancho_objetivo / imagen.get_width())
+
+    ancho = max(1, round(imagen.get_width() * escala))
+    alto = max(1, round(imagen.get_height() * escala))
+
+    # smoothscale y no scale: los sprites de origen son muy grandes y hay que
+    # reducirlos mucho, y el filtrado evita que queden bordes irregulares.
+    return pygame.transform.smoothscale(imagen, (ancho, alto))
 
     if ancho_objetivo is None:
         escala = alto_objetivo / caja.h
@@ -95,6 +134,57 @@ def cargar_texturas(equipo="CT"):
     }
 
 
+def recortar_agachado(texturas):
+    """Saca las piernas al sprite de agachar, sin deformar nada.
+
+    El sprite de agachar es un personaje PARADO encogido: su proporcion (0.96)
+    es casi la misma que la de correr (0.97). Al escalarlo a 56 px queda angosto
+    (54 px) y se ve como que el personaje se achica. Estirarlo en horizontal
+    arruina la figura: deformarla 1.72 veces queda peor todavia.
+
+    La solucion es un recorte en vez de una deformacion: se muestra del torso
+    para arriba y se ocultan las piernas. La cabeza conserva EXACTAMENTE el
+    mismo tamano que corriendo, porque no se toca ni un pixel de la imagen mas
+    alla del corte.
+
+    Se recorta sobre el fotograma de correr, no sobre el sprite de agachar: el
+    de agachar ya viene encogido, y recortarlo daria un torso chiquito.
+
+    El alto del recorte es ALTO_PERSONAJE_AGACHADO, el mismo que el de la
+    hitbox, asi que lo que se ve y lo que colisiona siguen midiendo igual.
+    """
+    if not texturas.get("correr") or not texturas.get("agacharse"):
+        return texturas
+
+    # Se recorta el fotograma de correr mas ancho, para que el torso ocupe todo
+    # el ancho de la hitbox y el personaje no se vea angosto al agacharse.
+    referencia = max(texturas["correr"], key=lambda f: f.get_width())
+
+    torso = _recortar_torso(referencia)
+    if torso is None:
+        return texturas
+
+    # El torso reemplaza al sprite de agachar. Se repite por cada fotograma
+    # para no romper la interfaz, que siempre espera una lista.
+    texturas["agacharse"] = [torso for _ in texturas["agacharse"]]
+    return texturas
+
+
+def _recortar_torso(imagen):
+    """La parte de arriba de la imagen, hasta ALTO_PERSONAJE_AGACHADO de alto.
+
+    El corte es por filas: se queda con las primeras. En un sprite de persona,
+    la cabeza esta arriba, asi que esto se lleva las piernas.
+
+    No se reescala nada. La imagen sale con los mismos pixeles que entro, que es
+    justo lo que se busca: que la cabeza se vea igual de grande que corriendo.
+    """
+    ancho, alto = imagen.get_size()
+    alto_recorte = min(constantes.ALTO_PERSONAJE_AGACHADO, alto)
+
+    return imagen.subsurface((0, 0, ancho, alto_recorte)).copy()
+
+
 # --- El personaje --------------------------------------------------------
 
 class Personaje:
@@ -124,10 +214,12 @@ class Personaje:
         # Estado del salto en curso. origen_salto es la linea de los pies en el
         # instante del salto, y tiempo_en_el_aire lleva la cuenta.
         self.origen_salto = self.posicion_y
+        self.velocidad_inicial = constantes.VELOCIDAD_SALTO
         self.tiempo_en_el_aire = 0.0
 
         self.en_suelo = True
         self.agachado = False
+        self.caida_rapida = False
 
         self.cuadro_animacion = 0
         self.reloj_animacion = 0.0
@@ -177,21 +269,47 @@ class Personaje:
         self.en_suelo = False
         self.agachado = False
         self.origen_salto = self.posicion_y
+        self.velocidad_inicial = constantes.VELOCIDAD_SALTO
         self.tiempo_en_el_aire = 0.0
+        self.caida_rapida = False
         self._cambiar_tamano()
 
     def agachar(self, agachado):
-        """Se agacha o se levanta.
+        """Se agacha, se levanta, o cae mas rapido si esta en el aire.
 
-        Solo tiene efecto en el suelo: en el aire no hay agachado. Cuando salta
-        desde el agachado, el personaje se levanta solo.
+        En el suelo es el agachado de verdad: el rectangulo baja de 96 a 56 px.
+
+        En el aire no hay agachado, pero el mismo control sirve para la CAIDA
+        RAPIDA: el personaje baja mas rapido y llega antes al suelo. Agachar en
+        el aire tambien acorta el resto de la subida.
         """
-        if agachado and not self.en_suelo:
+        if not self.en_suelo:
+            self._caer_mas_rapido(agachado)
             return
+
         if self.agachado == agachado:
             return
         self.agachado = agachado
         self._cambiar_tamano()
+
+    def _caer_mas_rapido(self, agachado):
+        """Enciende o apaga la caida rapida, sin romper el salto en curso.
+
+        Cambiar la gravedad a mitad de vuelo partira la solucion cerrada en dos.
+        Para no perder la posicion ni la velocidad, se mide donde esta el
+        personaje justo antes del cambio y se reinicia la parabola desde ahi.
+        """
+        if self.caida_rapida == agachado:
+            return
+
+        # Donde esta y hacia donde va ahora mismo.
+        posicion_actual = self.posicion_en_el_salto(self.tiempo_en_el_aire)
+        velocidad_actual = self.velocidad_en_el_salto(self.tiempo_en_el_aire)
+
+        self.origen_salto = posicion_actual
+        self.velocidad_inicial = velocidad_actual
+        self.tiempo_en_el_aire = 0.0
+        self.caida_rapida = agachado
 
     def _cambiar_tamano(self):
         """Ajusta el rectangulo al estado, sin despegarlo del suelo.
@@ -251,9 +369,24 @@ class Personaje:
         """
         return (
             self.origen_salto
-            + constantes.VELOCIDAD_SALTO * tiempo
-            + (constantes.GRAVEDAD / 2) * tiempo * tiempo
+            + self.velocidad_inicial * tiempo
+            + (self.gravedad_actual() / 2) * tiempo * tiempo
         )
+
+    def velocidad_en_el_salto(self, tiempo):
+        """La velocidad vertical a `tiempo` segundos de haber saltado.
+
+        Sale de derivar la posicion: es la pendiente de la parabola. Se usa para
+        reiniciar el vuelo cuando cambia la gravedad en el aire, para que el
+        cambio no de un tirón.
+        """
+        return self.velocidad_inicial + self.gravedad_actual() * tiempo
+
+    def gravedad_actual(self):
+        """La gravedad que se está usando ahora: la normal, o la de la caida rapida."""
+        if self.caida_rapida:
+            return constantes.GRAVEDAD * constantes.GRAVEDAD_CAIDA_RAPIDA
+        return constantes.GRAVEDAD
 
     def actualizar_animacion(self, delta):
         """Avanza el ciclo de correr.

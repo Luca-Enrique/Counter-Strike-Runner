@@ -88,7 +88,7 @@ de arriba, `900² / (2 · 2400) = 168.75` píxeles.
 
 La altura se calcula con la solución cerrada de la caída libre:
 
-```
+```text
 y(t) = y₀ + v₀ · t + (g / 2) · t²
 ```
 
@@ -115,14 +115,46 @@ avanza.
 | Estado | Qué hace |
 | --- | --- |
 | Correr | Siempre que está apoyado. Ciclo de 6 fotogramas a 12 por segundo. |
-| Saltar | Un toque de `ESPACIO`. En el aire no hace nada: no hay doble salto. |
-| Agachado | `ABAJO` baja el rectángulo de 96 a 56 px. **Solo en el suelo.** |
+| Saltar | Un toque de `ESPACIO` / `ARRIBA` / click izquierdo. En el aire no hace nada: no hay doble salto. |
+| Agachado | `ABAJO` / click derecho baja el rectángulo de 96 a 56 px. **Solo en el suelo.** |
 
 Salir de un agachado con `ESPACIO` levanta al personaje antes de saltar, así que
 saltar y agacharse no se contradicen.
 
 El agachado no aplica en el aire porque no hay sprite de caída: se usaría el de
-salto y no se vería la diferencia.
+salto y no se vería la diferencia. En su lugar, **mantener `ABAJO` apretado en el
+aire acelera la caída** (ver abajo).
+
+### La caída rápida
+
+`ABAJO` o el click derecho mantenidos mientras el personaje está en el aire cambian
+la gravedad a 2× (`GRAVEDAD_CAIDA_RAPIDA`). Sirve para bajar antes y meterse bajo
+un obstáculo cuando el salto normal no alcanza.
+
+La física no se reescribe: la parábola **se reinicia desde donde está el
+personaje**, con la posición y la velocidad que ya tenía. Por eso no hay un salto
+de posición al apretar, que sería un teletransporte. El efecto es que el ascenso
+restante se acorta y la bajada se acelera, de golpe y continuo.
+
+El salto normal no cambia: sin `ABAJO` el apex sigue siendo 168.75 px.
+
+### El agachado es un recorte, no una deformación
+
+El sprite de `agacharse.png` es un personaje **parado** encogido: su proporción
+(0.96) es casi la misma que la de correr (0.97). Escalado a 56 px queda angosto
+(54 px) y se lee como que el personaje se achica. Estirarlo en horizontal lo
+deformaba 1.72×, que quedaba peor todavía.
+
+La solución es **recortar**: se muestran los 56 pixeles de arriba del fotograma de
+correr, sin reescalar nada. Las piernas quedan ocultas y la cabeza conserva
+exactamente el mismo tamaño que corriendo.
+
+Por eso el ancho del agachado es **exactamente** el del fotograma de correr más
+ancho. Si el recorte volviera a escalar, el ancho sería distinto y la prueba
+`_agachado_no_se_deforma` caería.
+
+Si algún día se regenera el sprite ya en cuclillas, `recortar_agachado` se puede
+borrar y usar el archivo tal cual.
 
 ### El rectángulo manda
 
@@ -296,3 +328,38 @@ probar por separado, sin levantar la ventana del juego.
 animación del jugador se pueden probar sin abrir una ventana ni construir
 escenas. `juego.py` se queda con lo que le corresponde: ventana, bucle, escenas
 y el reparto del trabajo entre ellas.
+
+## 7. Las escenas
+
+`juego.py` tiene tres escenas y el flujo va de izquierda a derecha:
+
+```text
+titulo  --ESPACIO-->  equipo  --CLICK-->  juego
+```
+
+| Escena | Qué hace |
+| --- | --- |
+| `titulo` | Solo el nombre del juego. `ESPACIO` pasa a la elección, `ESC` sale. |
+| `equipo` | Los dos personajes a la vista. Un click elige y arranca. `ESC` vuelve. |
+| `juego` | La partida. |
+
+La pantalla de título **no anuncia los controles**: se anuncian en la de
+elección, que es donde se elige el personaje y arranca la partida.
+
+### El equipo se elige por la mitad de la pantalla
+
+El click se decide por la **mitad de la pantalla**: izquierda es CT, derecha es T.
+No se mira dónde cayó el retrato.
+
+Eso es deliberado. Si la decisión dependiera de la imagen, un asset faltante
+rompería la selección sin avisar. Con la mitad, el juego elige equipo siempre,
+y el retrato es solo decoración: si falta el archivo, se dibuja un rectángulo
+del color del equipo y el click sigue funcionando igual.
+
+Los retratos salen de `assets/obstaculos/persona_ct.png` y `persona_t.png`: son
+los mismos sprites que después van a ser obstáculos, así que la elección muestra
+exactamente la misma cara que se va a ver jugando.
+
+El equipo elegido queda en `juego.equipo` y no se vuelve a preguntar. Es el
+**campo 3 de `ranking.txt`**, así que la escena de partida lo lee de ahí para
+cargar los sprites, sin que la escena tenga que saber de dónde salió.
