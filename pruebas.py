@@ -23,6 +23,7 @@ os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 import pygame
 
 import constantes
+import fondo
 import juego
 import personaje
 
@@ -116,6 +117,11 @@ def tecla(tipo, key):
 
 def boton(tipo, numero, posicion=None):
     return pygame.event.Event(tipo, button=numero, pos=posicion or (0, 0))
+
+
+def movimiento(x, y=0):
+    """Un movimiento del raton a esa posicion."""
+    return pygame.event.Event(pygame.MOUSEMOTION, pos=(x, y))
 
 
 def click_equipo(equipo):
@@ -358,12 +364,14 @@ def _altos_de_sprite():
 def _agachado_entra_en_la_hitbox():
     """El sprite de agachar no se dibuja mas ancho que la hitbox.
 
-    El de agachar se recorta, asi que su ancho es el del fotograma de correr mas
-    ancho. No puede pasar de ese: un dibujo mas ancho que la hitbox golpearia
+    El de agachar se recorta, asi que su ancho es el que de verdad ocupa el
+    torso. No puede pasar del ancho de la hitbox: un dibujo mas ancho golpearia
     obstaculos que no se ven.
     """
     for equipo in ("CT", "T"):
         texturas = _texturas(equipo)
+        if not texturas.get("correr") or not texturas.get("agacharse"):
+            return False
         ancho_hitbox = max(f.get_width() for f in texturas["correr"])
         for f in texturas["agacharse"]:
             if f.get_width() > ancho_hitbox:
@@ -371,52 +379,58 @@ def _agachado_entra_en_la_hitbox():
     return True
 
 
-def _agachado_no_se_deforma():
-    """Agachar recorta el torso, pero no deforma la imagen.
+def _agachado_sale_del_sprite_de_agachar():
+    """El agachado usa el sprite de agacharse, no el de correr recortado.
 
-    Este es el bug que se quiere evitar. El sprite de agachar es un personaje
-    parado encogido: si se escalara a 56 px de alto, su proporcion lo dejaria
-    angosto y se veria como que el personaje se achica. La solucion fue estirarlo
-    en horizontal, pero deformarlo 1.72 veces quedaba peor.
-
-    Ahora se recorta: se muestran los 56 pixeles de arriba del fotograma de
-    correr, sin reescalar nada. La comprobacion es que el ancho del agachado sea
-    EXACTAMENTE el del fotograma de correr mas ancho: si el recorte volviera a
-    escalar, el ancho seria distinto y esta prueba caeria.
+    Es el bug que se corrigio: al agacharse se veia la pose de correr con las
+    piernas cortadas. Ahora se recorta el sprite de agacharse. Se comprueba que
+    el resultado sea el recorte del sprite de agacharse y que NO sea igual al
+    recorte del de correr.
     """
     for equipo in ("CT", "T"):
         texturas = _texturas(equipo)
-        ancho_correr = max(f.get_width() for f in texturas["correr"])
+        if not texturas.get("correr") or not texturas.get("agacharse"):
+            return False
 
-        for f in texturas["agacharse"]:
-            if f.get_width() != ancho_correr:
-                return False
-    return True
+        agachado = texturas["agacharse"][0]
 
-
-def _agachado_es_el_torso_del_equipo():
-    """El agachado sale de recortar el equipo pedido, no de cualquier otro.
-
-    Si el recorte usara siempre el torso de CT, jugar con T veria al personaje
-    de CT agachado.
-    """
-    for equipo in ("CT", "T"):
-        texturas = _texturas(equipo)
-        referencia = max(texturas["correr"], key=lambda f: f.get_width())
-        recorte = texturas["agacharse"][0]
-
-        # El recorte tiene que ser el pedazo de arriba de la imagen de correr.
-        if recorte.get_size() != (
-            referencia.get_width(),
-            constantes.ALTO_PERSONAJE_AGACHADO,
+        # Tiene que ser el pedazo de arriba del sprite de agacharse.
+        esperado = personaje._recortar_torso(
+            personaje.cargar_texturas(equipo)["agacharse"][0]
+        )
+        if agachado.get_size() != esperado.get_size():
+            return False
+        if pygame.image.tobytes(agachado, "RGBA") != pygame.image.tobytes(
+            esperado, "RGBA"
         ):
             return False
 
-        if recorte.get_at((recorte.get_width() // 2, 0)) != referencia.get_at(
-            (referencia.get_width() // 2, 0)
+        # Y no puede ser el sprite de correr recortado.
+        correr = max(texturas["correr"], key=lambda f: f.get_width())
+        recorte_correr = personaje._recortar_torso(correr)
+        if pygame.image.tobytes(agachado, "RGBA") == pygame.image.tobytes(
+            recorte_correr, "RGBA"
         ):
-            return False   # el pixel de arriba no es el del equipo
+            return False
     return True
+
+
+def _agachado_distingue_equipos():
+    """El agachado de CT y el de T no son el mismo sprite.
+
+    Si el recorte usara siempre el de CT, jugar con T veria al personaje de CT
+    agachado.
+    """
+    recortes = {}
+    for equipo in ("CT", "T"):
+        texturas = _texturas(equipo)
+        if not texturas.get("agacharse"):
+            return False
+        recortes[equipo] = texturas["agacharse"][0]
+
+    return pygame.image.tobytes(recortes["CT"], "RGBA") != pygame.image.tobytes(
+        recortes["T"], "RGBA"
+    )
 
 
 def _agachado_conserva_su_alto():
@@ -425,28 +439,25 @@ def _agachado_conserva_su_alto():
     Ese alto es el que hace pasar al personaje por debajo de un obstaculo alto.
     """
     for equipo in ("CT", "T"):
-        if _texturas(equipo)["agacharse"][0].get_height() != constantes.ALTO_PERSONAJE_AGACHADO:
+        texturas = _texturas(equipo)
+        if not texturas.get("agacharse"):
+            return False
+        if texturas["agacharse"][0].get_height() != constantes.ALTO_PERSONAJE_AGACHADO:
             return False
     return True
-    for equipo in ("CT", "T"):
-        if _texturas(equipo)["agacharse"][0].get_height() != constantes.ALTO_PERSONAJE_AGACHADO:
-            return False
-    return True
 
 
-def _todos_los_fotogramas_iguales():
-    """Todos los fotogramas de correr tienen la misma altura.
+def _fotograma_de_correr_correcto():
+    """El sprite de correr sale con el alto pedido.
 
-    El ancho NO se comprueba: los seis anchos difieren entre si (de 84 a 93 px),
-    asi que el personaje se veria respirar si se escalaran al mismo ancho. Lo
-    que se hace es dejar que cada fotograma conserve su proporcion dentro de un
-    rectangulo de ancho comun.
-
-    El alto si tiene que ser igual: si un fotograma quedara mas alto, al pasar
-    al siguiente el personaje saltaria de alto.
+    El ancho no se comprueba: lo decide la imagen de origen, que conserva su
+    proporcion dentro de un rectangulo de ancho comun.
     """
     for equipo in ("CT", "T"):
-        altos = {f.get_height() for f in _texturas(equipo)["correr"]}
+        texturas = _texturas(equipo)
+        if not texturas.get("correr"):
+            return False
+        altos = {f.get_height() for f in texturas["correr"]}
         if altos != {constantes.ALTO_PERSONAJE}:
             return False
     return True
@@ -558,11 +569,136 @@ def _dibuja_los_dos_equipos():
         color = juego.COLOR_DE_EQUIPO[equipo]
         if not any(
             lienzo.superficie.get_at((x, y))[:3] == color
-            for y in (344, 346, 348, 350)
+            for y in (402, 406, 410, 414)
             for x in range(0, constantes.ANCHO, 2)
         ):
             return False
     return True
+
+
+def _nombres_no_se_pisan():
+    """Cada nombre cae en su mitad: el de CT a la izquierda, el de T a la derecha.
+
+    Antes los dos se centraban en el medio de la pantalla y se pisaban, asi que
+    el color de un equipo aparecia en la mitad del otro.
+    """
+    escena = escena_de_equipo()
+    lienzo = juego.Lienzo()
+    lienzo.superficie.fill(constantes.COLOR_FONDO)
+    escena.dibujar(lienzo.superficie)
+
+    mitad = constantes.ANCHO // 2
+    for equipo, en_su_mitad in (("CT", lambda x: x < mitad),
+                                ("T", lambda x: x >= mitad)):
+        color = juego.COLOR_DE_EQUIPO[equipo]
+        for y in (402, 406, 410, 414):
+            for x in range(0, constantes.ANCHO, 2):
+                if lienzo.superficie.get_at((x, y))[:3] == color:
+                    if not en_su_mitad(x):
+                        return False
+    return True
+
+
+def _resaltado_con_teclas():
+    """A/D y las flechas mueven el resaltado de un equipo al otro."""
+    escena = escena_de_equipo()
+    if escena.resaltado != "CT":
+        return False
+
+    for key, esperado in (
+        (pygame.K_RIGHT, "T"),
+        (pygame.K_d, "T"),
+        (pygame.K_LEFT, "CT"),
+        (pygame.K_a, "CT"),
+    ):
+        escena.manejar_eventos(tecla(pygame.KEYDOWN, key))
+        if escena.resaltado != esperado:
+            return False
+    return True
+
+
+def _hover_resalta():
+    """Apuntar el raton a una mitad resalta el equipo de esa mitad."""
+    escena = escena_de_equipo()
+    escena.manejar_eventos(movimiento(constantes.ANCHO - 1))
+    if escena.resaltado != "T":
+        return False
+
+    escena.manejar_eventos(movimiento(0))
+    return escena.resaltado == "CT"
+
+
+def _espacio_confirma_el_resaltado():
+    """SPACE confirma el equipo resaltado con el teclado."""
+    escena = escena_de_equipo()
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_RIGHT))
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_SPACE))
+    return (escena.juego.equipo, escena.juego.cambio_de_escena) == ("T", "juego")
+
+
+def _enter_confirma_el_resaltado():
+    """ENTER confirma el equipo resaltado, que arranca en CT."""
+    escena = escena_de_equipo()
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_RETURN))
+    return (escena.juego.equipo, escena.juego.cambio_de_escena) == ("CT", "juego")
+
+
+def _eleccion_dibuja_el_fondo():
+    """La pantalla de eleccion pinta el mismo fondo que el titulo."""
+    escena = escena_de_equipo()
+    if escena.fondo is None:
+        return False
+
+    lienzo = juego.Lienzo()
+    lienzo.superficie.fill(constantes.COLOR_FONDO)
+    escena.actualizar(DELTA)
+    escena.dibujar(lienzo.superficie)
+
+    return any(
+        lienzo.superficie.get_at((x, y))[:3] != constantes.COLOR_FONDO
+        for y in range(0, constantes.ALTO, 20)
+        for x in range(0, constantes.ANCHO, 20)
+    )
+
+
+def _fondo_se_desplaza():
+    """El fondo del titulo avanza con el tiempo."""
+    fondo_titulo = fondo.Fondo()
+    fondo_titulo.actualizar(1.0)
+    return fondo_titulo.desplazamiento > 0.0
+
+
+def _fondo_rota_de_escenario():
+    """Pasado el tiempo, el fondo pasa al escenario siguiente."""
+    fondo_titulo = fondo.Fondo()
+    primero = fondo_titulo.indice
+    fondo_titulo.actualizar(constantes.SEGUNDOS_POR_FONDO)
+    if fondo_titulo.indice == primero:
+        return False
+
+    # Despues de dar la vuelta a todos, vuelve al primero.
+    for _ in range(len(fondo_titulo.nombres) - 1):
+        fondo_titulo.actualizar(constantes.SEGUNDOS_POR_FONDO)
+    return fondo_titulo.indice == primero
+
+
+def _titulo_dibuja_el_fondo():
+    """La pantalla de titulo pinta su fondo y no falla al dibujar."""
+    escena = _escena_titulo()
+    if escena.fondo is None:
+        return False
+
+    lienzo = juego.Lienzo()
+    lienzo.superficie.fill(constantes.COLOR_FONDO)
+    escena.actualizar(DELTA)
+    escena.dibujar(lienzo.superficie)
+
+    # Con el fondo andando, algun pixel deja de ser el color de fondo plano.
+    return any(
+        lienzo.superficie.get_at((x, y))[:3] != constantes.COLOR_FONDO
+        for y in range(0, constantes.ALTO, 20)
+        for x in range(0, constantes.ANCHO, 20)
+    )
 
 
 def _dibuja_sin_retratos():
@@ -584,13 +720,31 @@ def _dibuja_sin_retratos():
     return escena.juego.equipo == "T" and escena.juego.cambio_de_escena == "juego"
 
 
-def _ancho_de_correr_del_equipo(equipo):
-    """El ancho del primer fotograma de correr con el que arranca la partida."""
+def _texturas_de_la_partida(equipo):
+    """Las texturas que carga la escena de partida para un equipo."""
     stub = juego_stub()
     stub.equipo = equipo
     escena = juego.EscenaJuego(stub)
     escena.inicializar()
-    return escena.personaje.texturas["correr"][0].get_width()
+    return escena.personaje.texturas
+
+
+def _carga_sprites_del_equipo():
+    """La partida carga los sprites del equipo elegido, y CT y T son distintos.
+
+    CT y T pueden medir lo mismo (los dos sprites de correr salen de 76 px de
+    ancho), asi que no se compara el tamano sino el contenido: si la escena
+    cargara siempre el mismo equipo, los pixeles serian iguales.
+    """
+    ct = _texturas_de_la_partida("CT")
+    tt = _texturas_de_la_partida("T")
+    for estado in ("correr", "saltar", "agacharse"):
+        a, b = ct.get(estado), tt.get(estado)
+        if not a or not b:
+            return False
+        if pygame.image.tobytes(a[0], "RGBA") == pygame.image.tobytes(b[0], "RGBA"):
+            return False
+    return True
 
 
 def casos():
@@ -727,6 +881,18 @@ def casos():
         ("el boton central no hace nada",
          lambda: not _salta_con(boton(pygame.MOUSEBUTTONDOWN, 2))),
 
+        ("W tambien salta",
+         lambda: _salta_con(tecla(pygame.KEYDOWN, pygame.K_w))),
+
+        ("S tambien agacha en el suelo",
+         lambda: _agacha_con(tecla(pygame.KEYDOWN, pygame.K_s), True)),
+
+        ("soltar S levanta",
+         lambda: _agacha_con(
+             tecla(pygame.KEYDOWN, pygame.K_s), False,
+             tecla(pygame.KEYUP, pygame.K_s),
+         )),
+
         # --- La caida rapida
 
         ("agachar en el aire NO agacha el sprite: sigue el de salto",
@@ -757,11 +923,11 @@ def casos():
         ("los sprites del equipo salen con el alto pedido (96 parado, 56 agachado)",
          _altos_de_sprite() == (constantes.ALTO_PERSONAJE, constantes.ALTO_PERSONAJE_AGACHADO)),
 
-        ("agachar recorta el torso: el ancho es EXACTAMENTE el de correr (no deforma)",
-         _agachado_no_se_deforma()),
+        ("agachar usa el sprite de agacharse, no el de correr recortado",
+         _agachado_sale_del_sprite_de_agachar()),
 
-        ("el recorte de agachar sale del equipo pedido, no del otro",
-         _agachado_es_el_torso_del_equipo()),
+        ("el agachado de CT y el de T son distintos",
+         _agachado_distingue_equipos()),
 
         ("el sprite de agachar conserva los 56 px de alto al recortarse",
          _agachado_conserva_su_alto()),
@@ -769,8 +935,8 @@ def casos():
         ("el sprite de agachar nunca se dibuja mas ancho que la hitbox",
          _agachado_entra_en_la_hitbox()),
 
-        ("los seis fotogramas de correr tienen la misma altura (el ancho varia, a proposito)",
-         _todos_los_fotogramas_iguales()),
+        ("el fotograma de correr sale con el alto pedido",
+         _fotograma_de_correr_correcto()),
 
         ("cargar_textura devuelve None si el archivo no existe, sin fallar",
          personaje.cargar_textura("assets/no_existe_este_archivo.png", 96) is None),
@@ -801,13 +967,41 @@ def casos():
          _esc_vuelve_al_titulo()),
 
         ("la partida carga los sprites del equipo elegido (CT y T son distintos)",
-         _ancho_de_correr_del_equipo("CT") != _ancho_de_correr_del_equipo("T")),
+         _carga_sprites_del_equipo()),
 
         ("la eleccion dibuja los dos retratos y los dos nombres",
          _dibuja_los_dos_equipos()),
 
         ("la eleccion dibuja aunque falten los retratos",
          _dibuja_sin_retratos()),
+
+        ("los nombres de los equipos no se pisan: cada uno cae en su mitad",
+         _nombres_no_se_pisan()),
+
+        ("A/D y las flechas mueven el resaltado de la eleccion",
+         _resaltado_con_teclas()),
+
+        ("apuntar con el raton resalta el equipo de esa mitad",
+         _hover_resalta()),
+
+        ("SPACE confirma el equipo resaltado",
+         _espacio_confirma_el_resaltado()),
+
+        ("ENTER confirma el equipo resaltado",
+         _enter_confirma_el_resaltado()),
+
+        ("la eleccion dibuja el mismo fondo que el titulo",
+         _eleccion_dibuja_el_fondo()),
+
+        # --- El fondo del titulo
+        ("el fondo del titulo avanza con el tiempo",
+         _fondo_se_desplaza()),
+
+        ("el fondo del titulo rota por los escenarios",
+         _fondo_rota_de_escenario()),
+
+        ("el titulo dibuja el fondo encima del color plano",
+         _titulo_dibuja_el_fondo()),
     ]
 
 

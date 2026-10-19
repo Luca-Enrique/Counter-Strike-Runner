@@ -108,13 +108,13 @@ redondear solo al dibujar evita que el redondeo se acumule.
 
 ## 2.1 El personaje
 
-`personaje.py` tiene la física y la animación. No sabe qué escena lo usa ni le
+`personaje.py` tiene la física y el dibujo. No sabe qué escena lo usa ni le
 interesan los obstáculos: la escena le dice cuándo saltar o agachar y él solo
 avanza.
 
 | Estado | Qué hace |
 | --- | --- |
-| Correr | Siempre que está apoyado. Ciclo de 6 fotogramas a 12 por segundo. |
+| Correr | Siempre que está apoyado. Un único sprite estático, sin animación. |
 | Saltar | Un toque de `ESPACIO` / `ARRIBA` / click izquierdo. En el aire no hace nada: no hay doble salto. |
 | Agachado | `ABAJO` / click derecho baja el rectángulo de 96 a 56 px. **Solo en el suelo.** |
 
@@ -140,31 +140,34 @@ El salto normal no cambia: sin `ABAJO` el apex sigue siendo 168.75 px.
 
 ### El agachado es un recorte, no una deformación
 
-El sprite de `agacharse.png` es un personaje **parado** encogido: su proporción
-(0.96) es casi la misma que la de correr (0.97). Escalado a 56 px queda angosto
-(54 px) y se lee como que el personaje se achica. Estirarlo en horizontal lo
-deformaba 1.72×, que quedaba peor todavía.
+El sprite de `agacharse.png` tiene una proporción ancha (0.94) para ser una
+persona, así que si se escala directo a los 56 px de la hitbox queda chico y con
+la cabeza desproporcionada. Estirarlo en horizontal para compensar lo deforma y
+queda peor todavía.
 
-La solución es **recortar**: se muestran los 56 pixeles de arriba del fotograma de
-correr, sin reescalar nada. Las piernas quedan ocultas y la cabeza conserva
-exactamente el mismo tamaño que corriendo.
+La solución es **recortar**. Primero se carga `agacharse.png` al mismo alto que
+el de correr (96 px), así la cabeza sale del mismo tamaño; recién entonces se
+muestran los **56 pixeles de arriba** y se ocultan las piernas. El corte no
+reescala nada: la cabeza conserva sus píxeles originales.
 
-Por eso el ancho del agachado es **exactamente** el del fotograma de correr más
-ancho. Si el recorte volviera a escalar, el ancho sería distinto y la prueba
-`_agachado_no_se_deforma` caería.
+Después del corte se recorta el margen transparente que queda. Sin ese paso, el
+lienzo del sprite escalado (unos 90 px de ancho) se centraría sobre la hitbox de
+76 px y el dibujo se vería corrido de lugar. Con el recorte del margen, el torso
+visible queda centrado y nunca más ancho que la hitbox. La prueba
+`_agachado_entra_en_la_hitbox` lo comprueba.
 
-Si algún día se regenera el sprite ya en cuclillas, `recortar_agachado` se puede
-borrar y usar el archivo tal cual.
+El corte se hace sobre el sprite de `agacharse.png`, no sobre el de correr: lo
+que se ve agachado es la pose de agacharse, con las piernas ocultas.
 
 ### El rectángulo manda
 
 El rectángulo de colisión **nunca** se deduce del ancho del fotograma que se
 está dibujando. Hay dos razones, y las dos son bugs reales que se evitaron:
 
-- **El ancho no se recalcula por fotograma.** Los seis fotogramas de correr
-  tienen anchos distintos (de 84 a 93 px). Si el rectángulo tomara el ancho de
-  cada uno, engordaría y adelgazaría en cada paso de la animación y el
-  personaje parpadearía. El ancho sale del fotograma **más ancho**.
+- **El ancho no se recalcula con el estado.** Cada estado se dibuja con un
+  único sprite, pero el ancho de la hitbox no sale del sprite dibujado: sale del
+  sprite de correr. Si saliera del que se está dibujando, la hitbox cambiaría al
+  pasar de un estado a otro.
 - **El agachado no achica el ancho.** Solo el alto. Si la hitbox se angostara al
   agacharse, pasarían obstáculos que en realidad golpean.
 
@@ -207,7 +210,6 @@ marcados como `PROPUESTA` para distinguirlos de los que sí están fijados.
 | --- | --- | --- |
 | Altura del suelo | 460 px | Deja 80 px de piso dibujado debajo de la línea. |
 | Posición horizontal del jugador | 120 px | Fija: lo que se desplaza es el escenario, no el jugador. |
-| Velocidad de la animación de correr | 12 fotogramas/s | Con 6 fotogramas, el ciclo dura medio segundo. |
 | Proporción del personaje sin sprite | 0.9 | Ancho de reserva cuando no hay imagen. |
 | Tamaño de fuente de título | 64 px | El título tiene que leerse de lejos. |
 | Tamaño de fuente de texto | 32 px | Controles y mensajes. |
@@ -310,7 +312,7 @@ datos y la generación del ranking.
 ```text
 Counter-Strike-Runner/
 ├── juego.py             # punto de entrada: ventana, bucle y escenas
-├── personaje.py         # la física y la animación del jugador
+├── personaje.py         # la física y el dibujo del jugador
 ├── constantes.py        # todos los valores ajustables
 ├── pruebas.py           # verificaciones automáticas
 ├── generar_ranking.py   # lee ranking.txt y arma ranking.html (no importa pygame)
@@ -324,8 +326,8 @@ Counter-Strike-Runner/
 `generar_ranking.py` no importa Pygame a propósito: así se puede ejecutar y
 probar por separado, sin levantar la ventana del juego.
 
-`personaje.py` está aparte de `juego.py` por la misma razón: la física y la
-animación del jugador se pueden probar sin abrir una ventana ni construir
+`personaje.py` está aparte de `juego.py` por la misma razón: la física y el
+dibujo del jugador se pueden probar sin abrir una ventana ni construir
 escenas. `juego.py` se queda con lo que le corresponde: ventana, bucle, escenas
 y el reparto del trabajo entre ellas.
 

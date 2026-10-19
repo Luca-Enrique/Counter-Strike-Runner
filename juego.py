@@ -17,6 +17,7 @@ propias y no depende de ninguna escena.
 """
 import pygame
 import constantes
+import fondo
 import personaje
 
 # --- Funciones puras -----------------------------------------------------
@@ -154,8 +155,18 @@ def dibujar_texto(superficie, cadena, fuente, color, posicion):
 
 def dibujar_texto_centrado(superficie, cadena, fuente, color, y):
     """Escribe un texto centrado horizontalmente, a la altura `y`."""
+    dibujar_texto_centrado_en(
+        superficie, cadena, fuente, color, superficie.get_width() // 2, y
+    )
+
+def dibujar_texto_centrado_en(superficie, cadena, fuente, color, centro_x, y):
+    """Escribe un texto centrado en `centro_x`, a la altura `y`.
+
+    Sirve para centrar cada texto en su propio sitio y no todos en el medio de
+    la pantalla, que es lo que hacia que los nombres de los equipos se pisaran.
+    """
     imagen = fuente.render(cadena, True, color)
-    superficie.blit(imagen, imagen.get_rect(center=(superficie.get_width() // 2, y)))
+    superficie.blit(imagen, imagen.get_rect(center=(centro_x, y)))
 
 # --- Escenas -------------------------------------------------------------
 class Escena:
@@ -184,9 +195,17 @@ class Escena:
 class EscenaTitulo(Escena):
     """Pantalla de inicio. Es la que se ve al abrir el juego.
 
-    Muestra solo el titulo. Los controles y la eleccion de personaje van en la
-    pantalla siguiente.
+    Muestra el titulo sobre los escenarios del juego, que van avanzando de
+    derecha a izquierda como una muestra. Los controles y la eleccion de
+    personaje van en la pantalla siguiente.
     """
+
+    def __init__(self, juego):
+        super().__init__(juego)
+        self.fondo = None
+
+    def inicializar(self):
+        self.fondo = fondo.Fondo()
 
     def manejar_eventos(self, evento):
         if evento.type != pygame.KEYDOWN:
@@ -197,52 +216,85 @@ class EscenaTitulo(Escena):
         elif evento.key == pygame.K_ESCAPE:
             self.juego.salir()
 
+    def actualizar(self, delta):
+        if self.fondo is not None:
+            self.fondo.actualizar(delta)
+
     def dibujar(self, superficie):
+        if self.fondo is not None:
+            self.fondo.dibujar(superficie)
+
         dibujar_texto_centrado(
             superficie, constantes.TITULO_VENTANA,
             self.juego.fuentes["titulo"], constantes.COLOR_TEXTO, 240,
+        )
+        dibujar_texto_centrado(
+            superficie, "Apretá espacio para insertar una moneda",
+            self.juego.fuentes["medio"], constantes.COLOR_ACENTO, 330,
         )
 
 class EscenaEquipo(Escena):
     """Pantalla de eleccion de personaje: CT o T.
 
-    Los dos quedan a la vista y se elige con un click sobre el que se quiere.
-    El equipo elegido queda en juego.equipo, que despues lo lee la escena de
-    partida para cargar los sprites y lo usara el ranking.
+    Los dos quedan a la vista sobre el mismo fondo del titulo. El equipo
+    resaltado es el que se va a elegir: se mueve con A/D, con las flechas o con
+    el raton (lo que se apunta), y se confirma con SPACE, ENTER o el click
+    izquierdo. El equipo elegido queda en juego.equipo, que despues lo lee la
+    escena de partida para cargar los sprites y lo usara el ranking.
     """
 
     def __init__(self, juego):
         super().__init__(juego)
         self.retratos = {}
+        self.fondo = None
+        self.resaltado = EQUIPOS[0]
 
     def inicializar(self):
+        self.fondo = fondo.Fondo()
         if not self.juego.retratos_equipo:
             self.juego.retratos_equipo = cargar_retratos()
 
     def manejar_eventos(self, evento):
-        if evento.type == pygame.KEYDOWN and evento.key == pygame.K_ESCAPE:
+        if evento.type == pygame.KEYDOWN:
+            self._tecla(evento.key)
+        elif evento.type == pygame.MOUSEMOTION:
+            self._apuntar(evento.pos[0])
+        elif evento.type == pygame.MOUSEBUTTONDOWN:
+            self._click(evento)
+
+    def _tecla(self, key):
+        if key == pygame.K_ESCAPE:
             self.juego.cambiar_escena("titulo")
-            return
+        elif key in IZQUIERDA:
+            self.resaltado = EQUIPOS[0]
+        elif key in DERECHA:
+            self.resaltado = EQUIPOS[-1]
+        elif key in CONFIRMAR:
+            self._elegir(self.resaltado)
 
-        if evento.type != pygame.MOUSEBUTTONDOWN:
-            return
-
+    def _click(self, evento):
+        # Solo el boton izquierdo: el derecho es el de agacharse en la partida.
         if evento.button != constantes.BOTON_IZQUIERDO:
             return
+        self._apuntar(evento.pos[0])
+        self._elegir(self.resaltado)
 
-        # El click se decide por la mitad de la pantalla: izquierda CT,
-        # derecha T. No se mira el retrato, asi que funciona aunque falte el
-        # archivo y se este viendo un rectangulo de color.
-        if evento.pos[0] < constantes.ANCHO / 2:
-            self._elegir("CT")
-        else:
-            self._elegir("T")
+    def _apuntar(self, x):
+        """Resalta el equipo de la mitad donde esta `x`."""
+        self.resaltado = EQUIPOS[0] if x < constantes.ANCHO / 2 else EQUIPOS[-1]
 
     def _elegir(self, equipo):
         self.juego.equipo = equipo
         self.juego.cambiar_escena("juego")
 
+    def actualizar(self, delta):
+        if self.fondo is not None:
+            self.fondo.actualizar(delta)
+
     def dibujar(self, superficie):
+        if self.fondo is not None:
+            self.fondo.dibujar(superficie)
+
         dibujar_texto_centrado(
             superficie, "ELEGI TU PERSONAJE",
             self.juego.fuentes["medio"], constantes.COLOR_ACENTO, 90,
@@ -251,36 +303,33 @@ class EscenaEquipo(Escena):
         for indice, equipo in enumerate(EQUIPOS):
             self._dibujar_equipo(superficie, equipo, indice)
 
-        dibujar_texto_centrado(
-            superficie,
-            "CLICK PARA ELEGIR    ESPACIO: SALTAR    ABAJO: AGACHARSE",
-            self.juego.fuentes["medio"], constantes.COLOR_TEXTO, 470,
-        )
-
     def _dibujar_equipo(self, superficie, equipo, indice):
-        """Un equipo: su retrato y su nombre."""
-        centro_x = constantes.ANCHO // 4 + indice * (constantes.ANCHO // 2)
+        """Un equipo: su retrato y su nombre, centrados en su propia mitad.
 
-        # La caja donde se comprueba el click. Se ve como un marco, para que se
-        # entienda donde hay que hacer click.
+        El panel resaltado lleva un anillo dorado, para que se vea cual se va a
+        elegir tanto si se apunta con el raton como si se mueve con el teclado.
+        """
+        centro_x = constantes.ANCHO // 4 + indice * (constantes.ANCHO // 2)
+        resaltado = equipo == self.resaltado
+
         caja = pygame.Rect(
             centro_x - constantes.ANCHO // 4 + 20, 130,
             constantes.ANCHO // 2 - 40, 260,
         )
-        pygame.draw.rect(superficie, constantes.COLOR_EQUIPO_BORDE, caja, 2)
+        relleno = (constantes.COLOR_EQUIPO_RESALTADO if resaltado
+                   else constantes.COLOR_EQUIPO_ELEGIDO)
+        pygame.draw.rect(superficie, relleno, caja)
         pygame.draw.rect(
-            superficie, constantes.COLOR_EQUIPO_ELEGIDO, caja.inflate(-4, -4)
+            superficie,
+            constantes.COLOR_ACENTO if resaltado else constantes.COLOR_EQUIPO_BORDE,
+            caja, 4 if resaltado else 2,
         )
 
         self._dibujar_retrato(superficie, equipo, caja)
 
-        dibujar_texto_centrado(
+        dibujar_texto_centrado_en(
             superficie, NOMBRES_DE_EQUIPO[equipo],
-            self.juego.fuentes["medio"], COLOR_DE_EQUIPO[equipo], 350,
-        )
-        dibujar_texto_centrado(
-            superficie, equipo,
-            self.juego.fuentes["medio"], constantes.COLOR_TEXTO, 385,
+            self.juego.fuentes["medio"], COLOR_DE_EQUIPO[equipo], centro_x, 410,
         )
 
     def _dibujar_retrato(self, superficie, equipo, caja):
@@ -414,10 +463,16 @@ ESCENAS = {
 }
 
 # Los controles de docs/TEMATICA.md:
-#   SPACE / ARRIBA / CLICK IZQ -> SALTAR
-#   ABAJO / CLICK DER          -> AGACHARSE
-SALTAR = (pygame.K_SPACE, pygame.K_UP)
-AGACHAR = (pygame.K_DOWN,)
+#   SPACE / ARRIBA / W / CLICK IZQ -> SALTAR
+#   ABAJO / S / CLICK DER          -> AGACHARSE
+SALTAR = (pygame.K_SPACE, pygame.K_UP, pygame.K_w)
+AGACHAR = (pygame.K_DOWN, pygame.K_s)
+
+# En la eleccion de personaje: A/D y las flechas mueven el resaltado, y
+# SPACE/ENTER o el click izquierdo confirman.
+IZQUIERDA = (pygame.K_a, pygame.K_LEFT)
+DERECHA = (pygame.K_d, pygame.K_RIGHT)
+CONFIRMAR = (pygame.K_SPACE, pygame.K_RETURN, pygame.K_KP_ENTER)
 
 # --- Bucle principal -----------------------------------------------------
 def crear_ventana():

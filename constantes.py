@@ -88,37 +88,21 @@ JUGADOR_X = 120
 ALTO_PERSONAJE = 96
 ALTO_PERSONAJE_AGACHADO = 56
 
-# Que parte del personaje se ve agachado, en fraccion de su alto.
-#
-# El sprite de agachar es un personaje PARADO encogido: su proporcion (0.96) es
-# casi la misma que la de correr (0.97), asi que al escalarlo a 56 px queda
-# angosto (54 px) y se ve como que el personaje se achica. Estirarlo lo
-# deformaba 1.72 veces, que es peor.
-#
-# En vez de deformarlo, se le recorta: se muestra del torso para arriba y se
-# ocultan las piernas. La cabeza conserva EXACTAMENTE el mismo tamaño que
-# corriendo, asi que no hay ninguna deformacion en ninguna direccion.
-#
-# 56 / 96 = 0.583. Es la misma fraccion que el alto del agachado, para que el
-# recorte y la hitbox midan lo mismo.
-#
-# PROPUESTA. Es una relacion de a ojo: si al verlo queda raro, se ajusta este
-# numero.
-FRACCION_AGACHADO = 56 / 96
-
 # Ancho con el que se arma el rectangulo del personaje cuando no hay sprite
 # (por ejemplo en las pruebas). Si hay sprite manda el ancho real de la
 # imagen, para que el dibujo y la colISION coincidan.
 PROPORCION_PERSONAJE = 0.9
 
-# Fotogramas del ciclo de correr, y a cuantos por segundo avanzan.
-FOTOGRAMAS_CORRER = 6
-FOTOGRAMAS_ANIMACION_POR_SEGUNDO = 12
+# Fotogramas del estado de correr. Es uno solo: cada estado (correr, saltar,
+# agacharse) se dibuja con un unico sprite estatico, sin animacion.
+FOTOGRAMAS_CORRER = 1
 
 
 # --- Controles -----------------------------------------------------------
-# docs/TEMATICA.md pide SPACE/ARRIBA/CLICK IZQ para saltar y ABAJO/CLICK DER
-# para agacharse. El boton izquierdo es el 1 de Pygame y el derecho el 3.
+# docs/TEMATICA.md: SPACE/ARRIBA/W/CLICK IZQ saltan y ABAJO/S/CLICK DER
+# agachan. En la eleccion, A/D y las flechas mueven el resaltado, y
+# SPACE/ENTER/CLICK IZQ confirman. El boton izquierdo es el 1 de Pygame y el
+# derecho el 3.
 
 BOTON_IZQUIERDO = 1
 BOTON_DERECHO = 3
@@ -175,9 +159,11 @@ COLOR_ACENTO = (240, 196, 25)
 COLOR_PERSONAJE_SIN_SPRITE = (86, 122, 164)
 
 # Marco de las dos cajas de la pantalla de eleccion, y el fondo del recuadro
-# donde va el equipo elegido.
+# donde va el equipo elegido. El resaltado es el panel apuntado ahora mismo,
+# sea con el raton o con el teclado.
 COLOR_EQUIPO_BORDE = (70, 74, 86)
 COLOR_EQUIPO_ELEGIDO = (46, 50, 60)
+COLOR_EQUIPO_RESALTADO = (58, 64, 78)
 
 # Alto de los retratos de la pantalla de eleccion. Son mas grandes que el
 # personaje en juego para que se vean bien: solo es dibujo, la hitbox no cambia.
@@ -186,3 +172,22 @@ ALTO_RETRATO_EQUIPO = 200
 # Negro puro de las barras del letterbox. No es un color del juego: es el
 # fondo de la ventana donde no entra la imagen.
 COLOR_BARRA = (0, 0, 0)
+
+
+# --- Fondo que se desplaza -----------------------------------------------
+# PROPUESTA. El fondo muestra los escenarios del juego avanzando de derecha a
+# izquierda, como una muestra. Por ahora lo usa la pantalla de titulo.
+
+# Los escenarios que rotan, en orden. El nombre arma la ruta
+# assets/escenario/fondo_<nombre>.png.
+FONDOS = ("inicial", "combate", "bombas", "avanzada")
+
+# Velocidad a la que avanza el fondo, en pixeles por segundo.
+VELOCIDAD_FONDO = 60.0
+
+# Cada cuantos segundos el fondo pasa al escenario siguiente.
+SEGUNDOS_POR_FONDO = 6.0
+
+# Oscurecido que se pinta sobre el fondo, para que el texto de encima se lea.
+# Es el COLOR_FONDO con transparencia.
+ALFA_OSCURECIDO_FONDO = 150

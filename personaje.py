@@ -1,6 +1,6 @@
 """El personaje del jugador.
 
-Acá vive el rectangulo de fisica y la animacion del personaje, separado de la
+Acá vive el rectangulo de fisica y el dibujo del personaje, separado de la
 escena. La escena le pasa los textos y le dice cuando saltar o agachar; el
 personaje no sabe nada de escenas ni de obstaculos.
 
@@ -100,7 +100,7 @@ def _escalar(imagen, alto_objetivo, ancho_objetivo=None):
 
 
 def cargar_animacion(rutas, alto_objetivo):
-    """Carga los fotogramas de una animacion.
+    """Carga los sprites de un estado.
 
     Devuelve la lista de fotogramas, o None si no se pudo cargar ninguno.
     """
@@ -110,7 +110,7 @@ def cargar_animacion(rutas, alto_objetivo):
 
 
 def rutas_de_equipo(equipo):
-    """Las rutas de los tres estados de animacion de un equipo."""
+    """Las rutas de los tres estados de un equipo."""
     carpeta = f"{RUTA_PERSONAJES}/{equipo.lower()}"
     return {
         "correr": [f"{carpeta}/correr_{n}.png" for n in range(constantes.FOTOGRAMAS_CORRER)],
@@ -122,45 +122,35 @@ def rutas_de_equipo(equipo):
 def cargar_texturas(equipo="CT"):
     """Carga los sprites de un equipo, con el alto que corresponde a cada estado.
 
-    El estado parado usa ALTO_PERSONAJE y el agachado, ALTO_PERSONAJE_AGACHADO.
+    Correr y saltar usan ALTO_PERSONAJE. El agachado tambien se carga a ese
+    alto: despues recortar_agachado le saca las piernas y lo deja en
+    ALTO_PERSONAJE_AGACHADO, conservando la cabeza del mismo tamano.
     """
     rutas = rutas_de_equipo(equipo)
     return {
         "correr": cargar_animacion(rutas["correr"], constantes.ALTO_PERSONAJE),
         "saltar": cargar_animacion(rutas["saltar"], constantes.ALTO_PERSONAJE),
-        "agacharse": cargar_animacion(
-            rutas["agacharse"], constantes.ALTO_PERSONAJE_AGACHADO
-        ),
+        "agacharse": cargar_animacion(rutas["agacharse"], constantes.ALTO_PERSONAJE),
     }
 
 
 def recortar_agachado(texturas):
-    """Saca las piernas al sprite de agachar, sin deformar nada.
+    """Recorta el sprite de agachar para que entre en la hitbox.
 
-    El sprite de agachar es un personaje PARADO encogido: su proporcion (0.96)
-    es casi la misma que la de correr (0.97). Al escalarlo a 56 px queda angosto
-    (54 px) y se ve como que el personaje se achica. Estirarlo en horizontal
-    arruina la figura: deformarla 1.72 veces queda peor todavia.
+    El sprite de agachar se carga al mismo alto que correr (ALTO_PERSONAJE)
+    para que la cabeza quede del mismo tamano. Despues se le recorta el torso:
+    se muestran los primeros ALTO_PERSONAJE_AGACHADO pixeles y se ocultan las
+    piernas. Sin el recorte, el sprite completo se saldria de la hitbox
+    agachada.
 
-    La solucion es un recorte en vez de una deformacion: se muestra del torso
-    para arriba y se ocultan las piernas. La cabeza conserva EXACTAMENTE el
-    mismo tamano que corriendo, porque no se toca ni un pixel de la imagen mas
-    alla del corte.
-
-    Se recorta sobre el fotograma de correr, no sobre el sprite de agachar: el
-    de agachar ya viene encogido, y recortarlo daria un torso chiquito.
-
-    El alto del recorte es ALTO_PERSONAJE_AGACHADO, el mismo que el de la
-    hitbox, asi que lo que se ve y lo que colisiona siguen midiendo igual.
+    El corte se hace sobre el sprite de agachar, no sobre el de correr: lo que
+    se ve agachado es la pose de agacharse. El alto del recorte es el mismo que
+    el de la hitbox, asi que lo que se ve y lo que colisiona miden igual.
     """
-    if not texturas.get("correr") or not texturas.get("agacharse"):
+    if not texturas.get("agacharse"):
         return texturas
 
-    # Se recorta el fotograma de correr mas ancho, para que el torso ocupe todo
-    # el ancho de la hitbox y el personaje no se vea angosto al agacharse.
-    referencia = max(texturas["correr"], key=lambda f: f.get_width())
-
-    torso = _recortar_torso(referencia)
+    torso = _recortar_torso(texturas["agacharse"][0])
     if torso is None:
         return texturas
 
@@ -176,28 +166,33 @@ def _recortar_torso(imagen):
     El corte es por filas: se queda con las primeras. En un sprite de persona,
     la cabeza esta arriba, asi que esto se lleva las piernas.
 
-    No se reescala nada. La imagen sale con los mismos pixeles que entro, que es
-    justo lo que se busca: que la cabeza se vea igual de grande que corriendo.
+    Despues del corte se recorta el margen transparente que queda, para que el
+    torso visible quede centrado y no ocupe mas ancho del que de verdad usa. No
+    se reescala nada: la cabeza conserva el tamano que traia.
     """
     ancho, alto = imagen.get_size()
     alto_recorte = min(constantes.ALTO_PERSONAJE_AGACHADO, alto)
 
-    return imagen.subsurface((0, 0, ancho, alto_recorte)).copy()
+    corte = imagen.subsurface((0, 0, ancho, alto_recorte)).copy()
+
+    caja = corte.get_bounding_rect()
+    if caja.w == 0 or caja.h == 0:
+        return corte
+
+    return corte.subsurface(caja).copy()
 
 
 # --- El personaje --------------------------------------------------------
 
 class Personaje:
-    """El personaje: un rectangulo con fisica y una animacion encima."""
+    """El personaje: un rectangulo con fisica y un sprite encima."""
 
     def __init__(self, texturas=None, x=constantes.JUGADOR_X):
         self.texturas = texturas or {}
 
-        # El ancho es UNO para todos los estados, y sale del fotograma de correr
-        # mas ancho. No se puede usar el ancho de cada fotograma por separado:
-        # los seis tienen anchos distintos (de 84 a 93 px), asi que el
-        # rectangulo engordaria y adelgazaria en cada paso de la animacion y el
-        # personaje parpadearia.
+        # El ancho es UNO para todos los estados, y sale del sprite de correr.
+        # No se usa el ancho del sprite que se dibuja en cada momento: el
+        # rectangulo manda sobre el dibujo, no al reves.
         #
         # El agachado tambien usa ese mismo ancho, y no el suyo mas angosto:
         # si la hitbox se achicara al agacharse, pasarian obstaculos que en
@@ -221,14 +216,11 @@ class Personaje:
         self.agachado = False
         self.caida_rapida = False
 
-        self.cuadro_animacion = 0
-        self.reloj_animacion = 0.0
-
     def _ancho_de(self, estado, alto_por_defecto):
         """El ancho que se le da al personaje.
 
-        Es el del fotograma mas ancho del estado, para que todos los fotogramas
-        de la animacion entren en el mismo rectangulo.
+        Es el del sprite de correr, para que la hitbox no dependa del estado que
+        se esta dibujando.
 
         Si no hay sprite, se usa la proporcion fija, y por eso las pruebas
         pueden armar un personaje sin ningun archivo.
@@ -330,7 +322,6 @@ class Personaje:
 
     def actualizar(self, delta):
         self.actualizar_fisica(delta)
-        self.actualizar_animacion(delta)
 
     def actualizar_fisica(self, delta):
         """Avanza la caida y se apoya en el suelo si lo toca.
@@ -388,23 +379,6 @@ class Personaje:
             return constantes.GRAVEDAD * constantes.GRAVEDAD_CAIDA_RAPIDA
         return constantes.GRAVEDAD
 
-    def actualizar_animacion(self, delta):
-        """Avanza el ciclo de correr.
-
-        Solo avanza en el suelo: en el aire se dibuja el fotograma de salto, y
-        en el agachado el suyo.
-        """
-        fotogramas = self.texturas.get("correr") or []
-        if not self.en_suelo or len(fotogramas) < 2:
-            return
-
-        self.reloj_animacion += delta
-        paso = 1.0 / constantes.FOTOGRAMAS_ANIMACION_POR_SEGUNDO
-
-        while self.reloj_animacion >= paso:
-            self.reloj_animacion -= paso
-            self.cuadro_animacion = (self.cuadro_animacion + 1) % len(fotogramas)
-
     def fotograma_actual(self):
         """El estado que le toca por como esta el personaje."""
         if self.agachado:
@@ -424,7 +398,7 @@ class Personaje:
         fotogramas = self.texturas.get(estado) or []
 
         if fotogramas:
-            imagen = fotogramas[self.cuadro_animacion % len(fotogramas)]
+            imagen = fotogramas[0]
         else:
             superficie.fill(constantes.COLOR_PERSONAJE_SIN_SPRITE, self.rect)
             return

@@ -2,6 +2,44 @@
 
 Los cambios del proyecto, de la versión más reciente a la más antigua.
 
+## 1.3.0 - 2026-10-19
+
+### Cambiado
+
+- Cada estado del personaje (correr, saltar y agacharse) usa un único sprite
+  estático. Se eliminó la animación de correr de 6 fotogramas y las constantes
+  que la sostenían (`FOTOGRAMAS_ANIMACION_POR_SEGUNDO`, `FRACCION_AGACHADO`).
+- La pantalla de título dice **"Apretá espacio para insertar una moneda"**.
+- La elección de personaje se navega con `A`/`D` o las flechas (y con el ratón,
+  que resalta lo que se apunta) y se confirma con `SPACE`, `ENTER` o el click
+  izquierdo. El panel elegido se marca con un anillo dorado.
+- `W` salta y `S` se agacha, además de `ESPACIO`/`ARRIBA`/click izquierdo y
+  `ABAJO`/click derecho.
+
+### Corregido
+
+- **El agachado usa el sprite de agacharse.** Antes se veía la pose de correr
+  recortada. Ahora `agacharse.png` se carga al mismo alto que correr (96 px),
+  se recorta a los 56 px de la hitbox y se le quita el margen transparente, así
+  la cabeza queda del mismo tamaño y el torso entra justo en la hitbox.
+- **Los nombres de la elección ya no se pisan.** Se centraban todos en el medio
+  de la pantalla, así que el nombre y la abreviatura de cada equipo se
+  superponían con los del otro. Ahora cada uno se centra en su propia mitad y se
+  dibuja debajo del retrato, no encima. Se quitaron las etiquetas "CT"/"T" (queda
+  solo el nombre completo) y la línea de ayuda de la parte de abajo.
+
+### Agregado
+
+- Sprites de personaje de CT y de T (`correr_0.png`, `saltar.png` y
+  `agacharse.png` de cada equipo).
+- Retratos de la elección tomados de los mismos sprites que después son
+  obstáculos (`assets/obstaculos/persona_ct.png` y `persona_t.png`).
+- **Fondo animado** con los escenarios del juego avanzando de derecha a
+  izquierda como una muestra, que rota entre sí (`fondo.py`). Va oscurecido para
+  que el texto de encima se lea. Se usa en el título y en la elección de
+  personaje, y queda listo para que la partida lo use cuando tenga escenarios
+  por zona.
+
 ## 1.2.0 - 2026-10-02
 
 ### Agregado
