@@ -13,11 +13,15 @@ La logica esta dividida en cuatro partes:
 4. el Juego, que es el bucle: eventos, actualizacion y dibujo, en ese orden.
 
 El personaje vive aparte, en personaje.py, porque tiene fisica y animacion
-propias y no depende de ninguna escena.
+propias y no depende de ninguna escena. Los obstaculos viven aparte, en
+obstaculo.py, por la misma razon.
 """
+import random
+
 import pygame
 import constantes
 import fondo
+import obstaculo
 import personaje
 
 # --- Funciones puras -----------------------------------------------------
@@ -82,6 +86,43 @@ def calcular_puntaje(segundos):
     cada fotograma y no se podria leer de un vistazo.
     """
     return int(segundos) * constantes.PUNTOS_POR_SEGUNDO
+
+def zona_de_puntaje(puntaje):
+    """El escenario que corresponde al puntaje.
+
+    Son los mismos umbrales que usa la tematica para la progresion visual.
+    """
+    if puntaje >= constantes.UMBRAL_ZONA_AVANZADA:
+        return "avanzada"
+    if puntaje >= constantes.UMBRAL_ZONA_BOMBAS:
+        return "bombas"
+    if puntaje >= constantes.UMBRAL_ZONA_COMBATE:
+        return "combate"
+    return "inicial"
+
+def _progreso_dificultad(puntaje):
+    """Cuanto avanza la dificultad, de 0 a 1, al llegar a la zona avanzada."""
+    return min(1.0, max(0.0, puntaje / constantes.UMBRAL_ZONA_AVANZADA))
+
+def _interpolar(inicio, fin, progreso):
+    """Un valor entre inicio y fin, segun el progreso de 0 a 1."""
+    return inicio + (fin - inicio) * progreso
+
+def velocidad_obstaculo(puntaje):
+    """La velocidad de los obstaculos para ese puntaje, ya acotada."""
+    return _interpolar(
+        constantes.VELOCIDAD_OBSTACULO_MIN,
+        constantes.VELOCIDAD_OBSTACULO_MAX,
+        _progreso_dificultad(puntaje),
+    )
+
+def intervalo_obstaculo(puntaje):
+    """Los segundos entre obstaculos para ese puntaje, ya acotados."""
+    return _interpolar(
+        constantes.INTERVALO_MIN,
+        constantes.INTERVALO_MAX,
+        _progreso_dificultad(puntaje),
+    )
 
 # --- Imagen virtual ------------------------------------------------------
 class Lienzo:
@@ -389,16 +430,23 @@ class EscenaEquipo(Escena):
         return escalada
 
 class EscenaJuego(Escena):
-    """Escena de partida: el personaje, el puntaje y el suelo.
-
-    Todavia no hay obstaculos ni dificultad. Esos llegan en sus propias ramas.
-    """
+    """Escena de partida: fondo por zona, obstaculos, personaje y puntaje."""
 
     def __init__(self, juego):
         super().__init__(juego)
         self.puntaje = 0
         self.tiempo_vivido = 0.0
         self.personaje = None
+        self.fondo = None
+        self.suelo = None
+        self.obstaculos = []
+        self.tiempo_para_obstaculo = 0.0
+        self.personas_superadas = 0
+        self.terminada = False
+
+        # Se puede reemplazar en las pruebas para que la aparicion sea
+        # determinista.
+        self.azar = random.Random()
 
         # El agachado se puede pedir con ABAJO o con el click derecho, y son
         # dos controles independientes. Se guardan por separado para que
@@ -407,15 +455,26 @@ class EscenaJuego(Escena):
         self.raton_agacha = False
 
     def inicializar(self):
-        """Carga los sprites y arma el personaje.
+        """Carga los sprites y arma el personaje, el fondo y los obstaculos.
 
-        Si faltan archivos, cargar_texturas devuelve None y el personaje se
-        dibuja como un rectangulo de color. El juego arranca igual.
+        Si faltan archivos, las imagenes quedan en None y todo se dibuja como
+        rectangulos de color. El juego arranca igual.
         """
         texturas = personaje.cargar_texturas(self.juego.equipo)
         self.personaje = personaje.Personaje(
             texturas=personaje.recortar_agachado(texturas)
         )
+
+        self.puntaje = 0
+        self.tiempo_vivido = 0.0
+        self.obstaculos = []
+        self.personas_superadas = 0
+        self.terminada = False
+        self.fondo = fondo.Fondo(
+            rotar=False, alfa=constantes.ALFA_OSCURECIDO_JUEGO
+        )
+        self.suelo = fondo.Suelo()
+        self.tiempo_para_obstaculo = intervalo_obstaculo(0)
 
     def manejar_eventos(self, evento):
         if evento.type == pygame.QUIT:
@@ -454,20 +513,92 @@ class EscenaJuego(Escena):
         self.personaje.agachar(self.raton_agacha or self.tecla_agacha)
 
     def actualizar(self, delta):
+        if self.terminada:
+            return
+
         self.tiempo_vivido += delta
         self.puntaje = calcular_puntaje(self.tiempo_vivido)
         self.personaje.actualizar(delta)
 
-    def dibujar(self, superficie):
-        self.personaje.dibujar(superficie)
+        self._actualizar_fondo(delta)
+        self._actualizar_obstaculos(delta)
 
-        pygame.draw.line(
-            superficie,
-            constantes.COLOR_SUELO,
-            (0, constantes.SUELO_Y),
-            (constantes.ANCHO, constantes.SUELO_Y),
-            3,
+        if self._choca():
+            self._terminar()
+
+    def _actualizar_fondo(self, delta):
+        """Elige el escenario de la zona y mueve el fondo y el suelo."""
+        velocidad = velocidad_obstaculo(self.puntaje)
+
+        if self.fondo is not None:
+            self.fondo.cambiar_escenario(zona_de_puntaje(self.puntaje))
+            self.fondo.velocidad = velocidad * constantes.FACTOR_PARALLAX_FONDO
+            self.fondo.actualizar(delta)
+
+        if self.suelo is not None:
+            self.suelo.velocidad = velocidad * constantes.FACTOR_PARALLAX_SUELO
+            self.suelo.actualizar(delta)
+
+    def _actualizar_obstaculos(self, delta):
+        velocidad = velocidad_obstaculo(self.puntaje)
+
+        self.tiempo_para_obstaculo -= delta
+        while self.tiempo_para_obstaculo <= 0:
+            self._generar_obstaculo()
+            self.tiempo_para_obstaculo += intervalo_obstaculo(self.puntaje)
+
+        for cada_uno in self.obstaculos:
+            cada_uno.actualizar(delta, velocidad)
+
+            if (
+                cada_uno.tipo == "persona"
+                and not cada_uno.contada
+                and cada_uno.paso_al_jugador(self.personaje.rect.left)
+            ):
+                cada_uno.contada = True
+                self.personas_superadas += 1
+
+        self.obstaculos = [
+            cada_uno
+            for cada_uno in self.obstaculos
+            if not cada_uno.fuera_de_pantalla()
+        ]
+
+    def _generar_obstaculo(self, tipo=None):
+        """Crea un obstaculo en el borde derecho y lo suma a la lista."""
+        tipo = tipo or self._elegir_tipo()
+        self.obstaculos.append(
+            obstaculo.Obstaculo(tipo, self.juego.equipo, constantes.ANCHO)
         )
+
+    def _elegir_tipo(self):
+        """Un tipo al azar. Las pruebas lo reemplazan por uno fijo."""
+        return self.azar.choice(obstaculo.TIPOS)
+
+    def _choca(self):
+        """True si algun obstaculo se superpone con el personaje."""
+        return any(
+            cada_uno.colisiona(self.personaje.rect)
+            for cada_uno in self.obstaculos
+        )
+
+    def _terminar(self):
+        """Termina la partida y guarda el puntaje para la pantalla de game over."""
+        self.terminada = True
+        self.juego.ultimo_puntaje = self.puntaje
+        self.juego.cambiar_escena("gameover")
+
+    def dibujar(self, superficie):
+        if self.fondo is not None:
+            self.fondo.dibujar(superficie)
+
+        if self.suelo is not None:
+            self.suelo.dibujar(superficie)
+
+        for cada_uno in self.obstaculos:
+            cada_uno.dibujar(superficie)
+
+        self.personaje.dibujar(superficie)
 
         dibujar_texto(
             superficie,
@@ -477,10 +608,53 @@ class EscenaJuego(Escena):
             (20, 20),
         )
 
+
+class EscenaGameOver(Escena):
+    """Fin de la partida: el puntaje y la vuelta al titulo."""
+
+    def manejar_eventos(self, evento):
+        if evento.type == pygame.QUIT:
+            self.juego.salir()
+        elif evento.type == pygame.VIDEORESIZE:
+            self.juego.redimensionar(evento.size)
+        elif evento.type == pygame.KEYDOWN and (
+            evento.key in CONFIRMAR or evento.key == pygame.K_ESCAPE
+        ):
+            self.juego.cambiar_escena("titulo")
+        elif (
+            evento.type == pygame.MOUSEBUTTONDOWN
+            and evento.button == constantes.BOTON_IZQUIERDO
+        ):
+            self.juego.cambiar_escena("titulo")
+
+    def dibujar(self, superficie):
+        dibujar_texto_centrado(
+            superficie,
+            "GAME OVER",
+            self.juego.fuentes["titulo"],
+            constantes.COLOR_ACENTO,
+            220,
+        )
+        dibujar_texto_centrado(
+            superficie,
+            f"SCORE: {self.juego.ultimo_puntaje}",
+            self.juego.fuentes["medio"],
+            constantes.COLOR_TEXTO,
+            300,
+        )
+        dibujar_texto_centrado(
+            superficie,
+            "APRETA ESPACIO PARA VOLVER AL TITULO",
+            self.juego.fuentes["puntaje"],
+            constantes.COLOR_TEXTO,
+            360,
+        )
+
 ESCENAS = {
     "titulo": EscenaTitulo,
     "equipo": EscenaEquipo,
     "juego": EscenaJuego,
+    "gameover": EscenaGameOver,
 }
 
 # Los controles de docs/TEMATICA.md:
@@ -521,6 +695,10 @@ class Juego:
         # El equipo que elige el jugador. Es el campo 3 de ranking.txt, asi que
         # se guarda aqui y no se vuelve a preguntar.
         self.equipo = "CT"
+
+        # El puntaje de la ultima partida, para que la pantalla de game over lo
+        # muestre sin tener que guardar la escena anterior.
+        self.ultimo_puntaje = 0
 
         self.cambiar_escena("titulo")
 

@@ -50,8 +50,8 @@ INTERVALO_MAX = 0.7
 # docs/TEMATICA.md, secciones 7 y 9
 
 # El puntaje se mide sobre el tiempo, no sobre la distancia recorrida, y se
-# multiplica por 10 para que los umbrales se alcancen en minutos.
-PUNTAJE_POR_SEGUNDO = 10
+# multiplica por 10 para que los umbrales se alcancen en minutos (ver
+# PUNTOS_POR_SEGUNDO, mas abajo).
 
 # Umbrales de la progresion visual. El escenario cambia al cruzarlos, y son
 # los mismos numeros que disparan los mensajes de puntaje.
@@ -138,6 +138,10 @@ ALTO_OBSTACULO_PERSONA = 96
 LARGO_PROYECTIL = 56
 ALTO_PROYECTIL = 15
 
+# Color del rectangulo que reemplaza a un obstaculo cuando falta su sprite y
+# no se puede sacar el tamaño de la imagen.
+COLOR_OBSTACULO_SIN_SPRITE = (150, 96, 70)
+
 
 # --- Puntaje -------------------------------------------------------------
 # PROPUESTA. El puntaje son los segundos que llevas vivo, por diez. La cuenta
@@ -182,12 +186,27 @@ COLOR_BARRA = (0, 0, 0)
 # assets/escenario/fondo_<nombre>.png.
 FONDOS = ("inicial", "combate", "bombas", "avanzada")
 
-# Velocidad a la que avanza el fondo, en pixeles por segundo.
+# Velocidad a la que avanza el fondo, en pixeles por segundo. La partida la
+# reemplaza por la de los obstaculos multiplicada por FACTOR_PARALLAX_FONDO.
 VELOCIDAD_FONDO = 60.0
 
-# Cada cuantos segundos el fondo pasa al escenario siguiente.
+# Cuanto mas lento que los obstaculos se mueve el fondo de la partida. Al ser
+# mas lento, da sensacion de profundidad (parallax) en vez de parecer pegado a
+# los obstaculos.
+FACTOR_PARALLAX_FONDO = 0.5
+
+# El piso va con los obstaculos: es la superficie sobre la que se apoyan, no
+# una capa lejana. Se deja como factor para poder ajustarlo sin tocar juego.py.
+FACTOR_PARALLAX_SUELO = 1.0
+
+# Cada cuantos segundos el fondo pasa al escenario siguiente. Solo se usa en
+# las pantallas que rotan escenarios; la partida los elige por puntaje.
 SEGUNDOS_POR_FONDO = 6.0
 
 # Oscurecido que se pinta sobre el fondo, para que el texto de encima se lea.
 # Es el COLOR_FONDO con transparencia.
 ALFA_OSCURECIDO_FONDO = 150
+
+# En la partida el oscurecido es mas suave: los obstaculos tienen que verse
+# bien, no solo el texto.
+ALFA_OSCURECIDO_JUEGO = 60
