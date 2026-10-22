@@ -14,6 +14,8 @@ Se ejecuta con:
 Devuelve 0 si todo pasa y 1 si algo falla.
 """
 import os
+import tempfile
+from pathlib import Path
 
 # Tiene que estar antes de importar juego, para que las pruebas corran tambien
 # en una maquina sin pantalla (un servidor de integracion continua, por
@@ -24,9 +26,11 @@ import pygame
 
 import constantes
 import fondo
+import generar_ranking
 import juego
 import obstaculo
 import personaje
+import ranking
 
 
 # Ventanas raras, para comprobar que la imagen entra siempre entera.
@@ -86,11 +90,25 @@ def juego_stub(tamano_ventana=None):
         def __init__(self):
             self.cambio_de_escena = None
             self.ultimo_puntaje = 0
+            self.ultimas_personas = 0
             self.equipo = "CT"
             self.retratos_equipo = {}
+            self.ruta_ranking = ranking.RUTA_RANKING
+            self.ruta_ranking_html = ranking.RUTA_RANKING.with_name("ranking.html")
+            self.navegador_abierto = None
+            self.abrir_navegador = self._anotar_apertura
             self.ventana = VentanaDePrueba(
                 tamano_ventana or (constantes.ANCHO, constantes.ALTO)
             )
+
+        def _anotar_apertura(self, url):
+            self.navegador_abierto = url
+
+        def abrir_ranking(self):
+            try:
+                self.abrir_navegador(self.ruta_ranking_html.resolve().as_uri())
+            except OSError:
+                pass
 
         def cambiar_escena(self, nombre):
             self.cambio_de_escena = nombre
@@ -585,7 +603,7 @@ def _dibuja_los_dos_equipos():
         color = juego.COLOR_DE_EQUIPO[equipo]
         if not any(
             lienzo.superficie.get_at((x, y))[:3] == color
-            for y in (402, 406, 410, 414)
+            for y in (438, 442, 446)
             for x in range(0, constantes.ANCHO, 2)
         ):
             return False
@@ -607,7 +625,7 @@ def _nombres_no_se_pisan():
     for equipo, en_su_mitad in (("CT", lambda x: x < mitad),
                                 ("T", lambda x: x >= mitad)):
         color = juego.COLOR_DE_EQUIPO[equipo]
-        for y in (402, 406, 410, 414):
+        for y in (438, 442, 446):
             for x in range(0, constantes.ANCHO, 2):
                 if lienzo.superficie.get_at((x, y))[:3] == color:
                     if not en_su_mitad(x):
@@ -1048,7 +1066,7 @@ def _el_suelo_sin_asset_no_rompe():
     return color == constantes.COLOR_SUELO
 
 
-def _gameover_vuelve_al_titulo():
+def _gameover_pasa_a_iniciales():
     stub = juego_stub()
     stub.ultimo_puntaje = 777
     escena = juego.EscenaGameOver(stub)
@@ -1057,7 +1075,338 @@ def _gameover_vuelve_al_titulo():
     lienzo = juego.Lienzo()
     escena.dibujar(lienzo.superficie)
     escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_SPACE))
+    return escena.juego.cambio_de_escena == "iniciales"
+
+
+def _gameover_esc_vuelve_al_titulo():
+    stub = juego_stub()
+    stub.ultimo_puntaje = 777
+    escena = juego.EscenaGameOver(stub)
+    escena.inicializar()
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_ESCAPE))
     return escena.juego.cambio_de_escena == "titulo"
+
+
+def _chocar_guarda_las_personas():
+    """El game over guarda el puntaje y las personas superadas de la partida."""
+    escena = escena_de_juego()
+    escena.personas_superadas = 4
+    _soltar_sobre_el_jugador(escena, "caja")
+    escena.actualizar(DELTA)
+    return (
+        escena.juego.ultimo_puntaje == escena.puntaje
+        and escena.juego.ultimas_personas == 4
+    )
+
+
+# --- Ayudantes para el ranking -------------------------------------------
+
+def _escena_iniciales(ruta_ranking):
+    """Una EscenaIniciales apuntada a un ranking temporal."""
+    stub = juego_stub()
+    stub.ruta_ranking = ruta_ranking
+    stub.ruta_ranking_html = ruta_ranking.with_name("ranking.html")
+    stub.ultimo_puntaje = 1250
+    stub.ultimas_personas = 37
+    stub.equipo = "T"
+    escena = juego.EscenaIniciales(stub)
+    escena.inicializar()
+    return escena
+
+
+def _teclea(escena, texto):
+    """Escribe un texto letra por letra, como si se tipeara."""
+    for letra in texto:
+        escena.manejar_eventos(tecla(pygame.KEYDOWN, ord(letra)))
+    return escena
+
+
+def _iniciales_por_flechas():
+    """Las flechas cambian la letra y mueven el slot, dando la vuelta."""
+    escena = _escena_iniciales(ranking.RUTA_RANKING)
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_UP))
+    if escena.letras[0] != "B":
+        return False
+
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_DOWN))
+    if escena.letras[0] != "A":
+        return False
+
+    # Bajar desde A tiene que dar la vuelta a Z, no quedarse pegado.
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_DOWN))
+    if escena.letras[0] != "Z":
+        return False
+
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_RIGHT))
+    if escena.slot != 1:
+        return False
+
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_RIGHT))
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_RIGHT))
+    return escena.slot == 2
+
+
+def _slot_no_se_pasa_del_borde():
+    """El cursor se queda en 0 o en 2, no da la vuelta."""
+    escena = _escena_iniciales(ranking.RUTA_RANKING)
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_LEFT))
+    si_izquierda = escena.slot == 0
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_RIGHT))
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_RIGHT))
+    return si_izquierda and escena.slot == 2
+
+
+def _tipeo_directo():
+    """Una letra de la A a la Z se escribe y avanza el slot."""
+    escena = _escena_iniciales(ranking.RUTA_RANKING)
+    _teclea(escena, "luc")
+    return "".join(escena.letras) == "LUC"
+
+
+def _guardar_escribe_el_ranking(tmp):
+    """Confirmar agrega la partida, regenera el HTML y abre el navegador."""
+    ruta = tmp / "ranking.txt"
+    escena = _escena_iniciales(ruta)
+    _teclea(escena, "luc")
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_RETURN))
+
+    if not escena.guardado:
+        return False
+
+    partidas = ranking.leer_partidas(ruta, avisar=lambda _: None)
+    guardada = (
+        len(partidas) == 1
+        and partidas[0].iniciales == "LUC"
+        and partidas[0].puntaje == 1250
+        and partidas[0].equipo == "T"
+        and partidas[0].personas == 37
+    )
+    html_creado = ruta.with_name("ranking.html").exists()
+    abierto = escena.juego.navegador_abierto is not None
+
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_RETURN))
+    return (
+        guardada
+        and html_creado
+        and abierto
+        and escena.juego.cambio_de_escena == "titulo"
+    )
+
+
+def _esc_cancela_sin_guardar(tmp):
+    """ESC sale de las iniciales y no escribe nada."""
+    ruta = tmp / "ranking.txt"
+    escena = _escena_iniciales(ruta)
+    _teclea(escena, "luc")
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_ESCAPE))
+    return (
+        escena.juego.cambio_de_escena == "titulo"
+        and not ruta.exists()
+        and escena.juego.navegador_abierto is None
+    )
+
+
+def _error_al_guardar_no_rompe(tmp):
+    """Si el ranking no se puede escribir, se avisa y el juego sigue.
+
+    Para forzar el error se usa un archivo como si fuera carpeta: crear el
+    directorio padre o abrir el archivo tira OSError.
+    """
+    estorbo = tmp / "estorbo"
+    estorbo.write_text("no soy una carpeta", encoding="utf-8")
+
+    stub = juego_stub()
+    stub.ruta_ranking = estorbo / "ranking.txt"
+    stub.ruta_ranking_html = estorbo / "ranking.html"
+    escena = juego.EscenaIniciales(stub)
+    escena.inicializar()
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_RETURN))
+
+    dibujo = True
+    try:
+        escena.dibujar(juego.Lienzo().superficie)
+    except Exception:
+        dibujo = False
+
+    return (
+        escena.error is not None
+        and not escena.guardado
+        and escena.juego.cambio_de_escena is None
+        and dibujo
+    )
+
+
+def con_carpeta_temporal(comprobar):
+    """Arma una funcion que corre `comprobar` dentro de una carpeta temporal.
+
+    Las pruebas del ranking tienen que escribir archivos de verdad, asi que
+    cada una trabaja en su propio directorio y no toca el ranking.txt real.
+    """
+    def correr():
+        with tempfile.TemporaryDirectory() as carpeta:
+            return comprobar(Path(carpeta))
+    return correr
+
+
+# --- Ayudantes para los datos --------------------------------------------
+
+LINEAS_DE_EJEMPLO = (
+    "LUC;1250;CT;2026-10-16 14:32:05;37\n"
+    "LUC;980;CT;2026-10-16 14:35:12;29\n"
+    "ANA;1500;T;2026-10-16 15:02:44;45\n"
+    "LUC;640;T;2026-10-16 15:10:01;19\n"
+)
+
+
+def _escribe(tmp, contenido, nombre="ranking.txt"):
+    ruta = tmp / nombre
+    ruta.write_text(contenido, encoding="utf-8")
+    return ruta
+
+
+def _parsear():
+    partida = ranking.parsear_linea("LUC;1250;CT;2026-10-16 14:32:05;37")
+    return (
+        partida.iniciales == "LUC"
+        and partida.puntaje == 1250
+        and partida.equipo == "CT"
+        and partida.personas == 37
+        and partida.fecha.year == 2026
+        and partida.fecha.hour == 14
+    )
+
+
+def _lineas_invalidas(tmp):
+    """Las lineas mal formadas se saltean con aviso y no cortan la lectura."""
+    ruta = _escribe(
+        tmp,
+        "LUC;1250;CT;2026-10-16 14:32:05;37\n"
+        "esto no es una partida\n"
+        "XX;100;CT;2026-10-16 14:32:05;1\n"
+        "LUC;no-es-numero;CT;2026-10-16 14:32:05;1\n"
+        "LUC;100;XX;2026-10-16 14:32:05;1\n"
+        "LUC;100;CT;16-10-2026;1\n",
+    )
+    avisos = []
+    partidas = ranking.leer_partidas(ruta, avisar=avisos.append)
+    return len(partidas) == 1 and len(avisos) == 5
+
+
+def _archivo_inexistente(tmp):
+    ruta = tmp / "nuevo.txt"
+    partidas = ranking.leer_partidas(ruta, avisar=lambda _: None)
+    return partidas == [] and ruta.exists()
+
+
+def _agregar_es_append(tmp):
+    """Agregar no pisa lo anterior: el ranking es historico."""
+    ruta = _escribe(tmp, LINEAS_DE_EJEMPLO)
+    ranking.agregar_partida(ruta, "ana", 1700, "CT", 50)
+    ranking.agregar_partida(ruta, "BOB", 30, "T", 2)
+    return len(ranking.leer_partidas(ruta, avisar=lambda _: None)) == 6
+
+
+def _orden_y_empates(tmp):
+    """Puntaje descendente y, en empate, gana la partida mas antigua."""
+    ruta = _escribe(
+        tmp,
+        "ENP;900;CT;2026-10-16 14:00:00;1\n"
+        "VIE;900;T;2026-09-01 09:00:00;2\n"
+        "ALT;1500;CT;2026-10-16 14:32:05;3\n",
+    )
+    orden = ranking.clasificar(ranking.leer_partidas(ruta, avisar=lambda _: None))
+    return (
+        [partida.iniciales for partida in orden] == ["ALT", "VIE", "ENP"]
+    )
+
+
+def _top_recorta(tmp):
+    ruta = _escribe(
+        tmp,
+        "".join(
+            "PA{};{};CT;2026-10-16 14:{:02d}:00;1\n".format(
+                chr(ord("A") + indice), indice * 10, indice
+            )
+            for indice in range(15)
+        ),
+    )
+    mejores = ranking.top(ranking.leer_partidas(ruta, avisar=lambda _: None))
+    return (
+        len(mejores) == 10
+        and mejores[0].puntaje == 140
+        and mejores[-1].puntaje == 50
+    )
+
+
+def _cuenta_y_ratio(tmp):
+    """D cuenta todas las partidas del jugador; K/D se redondea a un decimal."""
+    ruta = _escribe(tmp, LINEAS_DE_EJEMPLO)
+    partidas = ranking.leer_partidas(ruta, avisar=lambda _: None)
+    cantidades = ranking.contar_por_iniciales(partidas)
+    return (
+        cantidades["LUC"] == 3
+        and cantidades["ANA"] == 1
+        and ranking.ratio(37, 3) == "12.3"
+        and ranking.ratio(45, 1) == "45.0"
+    )
+
+
+def _generar_html(tmp):
+    """El HTML tiene las columnas, el top 10 y el link a estilos.css."""
+    ruta = _escribe(tmp, LINEAS_DE_EJEMPLO)
+    salida = generar_ranking.generar_html(ruta, tmp / "salida.html")
+    texto = salida.read_text(encoding="utf-8")
+
+    tiene_columnas = all(
+        columna in texto
+        for columna in ("POS", "INICIALES", "EQUIPO", "SCORE", "K/D", "FECHA")
+    )
+    tiene_css = 'href="estilos.css"' in texto
+    tiene_filas = texto.count("<tr class=\"fila") == 4
+    ordenado = texto.index("ANA") < texto.index("LUC")
+    return tiene_columnas and tiene_css and tiene_filas and ordenado
+
+
+def _generar_html_escapa():
+    """El generador escapa lo que llega, aunque los datos ya esten validados.
+
+    Los datos validos no pueden traer HTML, pero la funcion no tiene que confiar
+    en eso: se le pasa una partida armada a mano para comprobarlo.
+    """
+    from datetime import datetime
+
+    tramposa = ranking.Partida(
+        "<B>", 100, "CT", datetime(2026, 10, 16, 14, 0, 0), 1
+    )
+    fila = generar_ranking._fila_html(1, tramposa, 1)
+    return "<B>" not in fila and "&lt;B&gt;" in fila
+
+
+def _generar_html_vacio(tmp):
+    """Sin partidas el HTML se genera igual, con un aviso en la tabla."""
+    ruta = tmp / "vacio.txt"
+    salida = generar_ranking.generar_html(ruta, tmp / "salida.html")
+    texto = salida.read_text(encoding="utf-8")
+    return salida.exists() and "TODAVIA NO HAY PARTIDAS" in texto
+
+
+def _iniciales_validas():
+    """Las iniciales y el equipo se normalizan a mayusculas."""
+    return (
+        ranking.validar_iniciales("luc") == "LUC"
+        and ranking.validar_equipo("ct") == "CT"
+    )
+
+
+def _iniciales_invalidas():
+    """Lo que no son 3 letras tiene que rechazarse."""
+    for malo in ("LU", "LUCAS", "LU1", "L C", ""):
+        try:
+            ranking.validar_iniciales(malo)
+        except ValueError:
+            continue
+        return False
+    return True
 
 
 def casos():
@@ -1397,8 +1746,74 @@ def casos():
         ("la pantalla de game over esta registrada",
          "gameover" in juego.ESCENAS),
 
-        ("game over muestra el puntaje y vuelve al titulo",
-         _gameover_vuelve_al_titulo),
+        ("la pantalla de iniciales esta registrada",
+         "iniciales" in juego.ESCENAS),
+
+        ("game over muestra el puntaje y pasa a las iniciales",
+         _gameover_pasa_a_iniciales),
+
+        ("ESC en game over vuelve al titulo sin guardar",
+         _gameover_esc_vuelve_al_titulo),
+
+        ("el choque guarda el puntaje y las personas superadas",
+         _chocar_guarda_las_personas),
+
+        # --- Iniciales
+        ("las flechas cambian la letra y mueven el slot, dando la vuelta",
+         _iniciales_por_flechas),
+
+        ("el cursor de iniciales no se pasa de los bordes",
+         _slot_no_se_pasa_del_borde),
+
+        ("una letra de la A a la Z se escribe directo",
+         _tipeo_directo),
+
+        ("confirmar guarda la partida, regenera el HTML y abre el navegador",
+         con_carpeta_temporal(_guardar_escribe_el_ranking)),
+
+        ("ESC en las iniciales cancela y no guarda nada",
+         con_carpeta_temporal(_esc_cancela_sin_guardar)),
+
+        ("si el ranking no se puede escribir, se avisa y el juego sigue",
+         con_carpeta_temporal(_error_al_guardar_no_rompe)),
+
+        # --- Datos del ranking
+        ("una linea bien formada se parsea campo por campo",
+         _parsear),
+
+        ("las lineas mal formadas se saltean con aviso",
+         con_carpeta_temporal(_lineas_invalidas)),
+
+        ("un ranking inexistente se crea vacio",
+         con_carpeta_temporal(_archivo_inexistente)),
+
+        ("agregar una partida nunca pisa las anteriores",
+         con_carpeta_temporal(_agregar_es_append)),
+
+        ("el ranking ordena por puntaje y desempata por fecha",
+         con_carpeta_temporal(_orden_y_empates)),
+
+        ("el top 10 recorta la lista sin reordenarla",
+         con_carpeta_temporal(_top_recorta)),
+
+        ("D cuenta las partidas del jugador y K/D usa un decimal",
+         con_carpeta_temporal(_cuenta_y_ratio)),
+
+        ("las iniciales y el equipo se normalizan a mayusculas",
+         _iniciales_validas),
+
+        ("lo que no son 3 letras se rechaza",
+         _iniciales_invalidas),
+
+        # --- Generacion del HTML
+        ("el HTML tiene las columnas, el top 10, el CSS y el orden correcto",
+         con_carpeta_temporal(_generar_html)),
+
+        ("el HTML escapa el contenido de los datos",
+         _generar_html_escapa),
+
+        ("sin partidas el HTML se genera igual, con un aviso",
+         con_carpeta_temporal(_generar_html_vacio)),
     ]
 
 

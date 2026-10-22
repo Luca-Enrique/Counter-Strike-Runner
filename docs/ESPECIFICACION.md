@@ -276,18 +276,46 @@ lo sube lo suficiente para pasar sobre los obstáculos de suelo (el salto llega
 a 168.75 px y el más alto mide 96 px).
 
 Cada persona superada se cuenta una sola vez, aunque tarde varios fotogramas en
-terminar de pasar al jugador. Ese contador es el campo 5 de `ranking.txt`; por
-ahora se guarda en la escena y todavía no se muestra.
+terminar de pasar al jugador. Ese contador es el campo 5 de `ranking.txt`: la
+partida lo copia a `juego.ultimas_personas` al chocar y de ahí sale el **K** del
+ranking. El marcador en pantalla sigue mostrando el SCORE, no las personas.
 
-## 2.3 El game over
+## 2.3 El game over y las iniciales
 
 Cuando el personaje choca, la escena guarda el puntaje en
-`juego.ultimo_puntaje` y cambia a `gameover`. La pantalla muestra **GAME OVER**,
-el puntaje y un aviso para volver. `SPACE`, `ENTER`, `ESC` o el click izquierdo
-vuelven al título.
+`juego.ultimo_puntaje` y las personas superadas en `juego.ultimas_personas`, y
+cambia a `gameover`. La pantalla usa el fondo animado fijado en el escenario
+`bombas`, un panel central semitransparente, una frase tematica elegida al azar
+desde `constantes.FRASES_GAMEOVER` y el aviso parpadeante para pasar a las
+iniciales. `SPACE`, `ENTER` o el click izquierdo pasan a la pantalla de
+iniciales; `ESC` vuelve al título sin guardar nada.
 
-Esta rama no pide iniciales ni escribe el ranking: eso queda para la rama de
-game over completo.
+## 2.4 El ingreso de iniciales
+
+La pantalla de iniciales (`iniciales`) pide exactamente 3 letras, al estilo de las
+recreativas:
+
+| Tecla | Qué hace |
+| --- | --- |
+| `ARRIBA` / `W` | Pasa a la letra siguiente, dando la vuelta de Z a A. |
+| `ABAJO` / `S` | Pasa a la letra anterior, dando la vuelta de A a Z. |
+| `IZQUIERDA` / `DERECHA` | Mueve el cursor entre las tres letras. |
+| `A`..`Z` | Escribe esa letra directo y avanza el cursor. |
+| `BACKSPACE` | Retrocede un lugar para corregir. |
+| `ENTER` | Confirma. |
+| `ESC` | Cancela y vuelve al título sin guardar. |
+
+La pantalla usa el fondo animado rotativo y un panel central. El casillero
+apuntado se resalta con el color de acento, muestra flechas parpadeantes
+arriba y abajo, y su letra aparece más grande. Al confirmar se **escribe la
+partida** en `ranking.txt`, se **regenera** `ranking.html` y se **abre en el
+navegador**. Recién ahí la partida queda registrada. Si el archivo no se puede
+escribir, el juego no se cae: muestra el error en pantalla y `ENTER` vuelve al
+título.
+
+El guardado y la apertura viven en `juego.py` como `juego.ruta_ranking`,
+`juego.ruta_ranking_html` y `juego.abrir_ranking()`, para que se puedan
+reemplazar en las pruebas y no ensuciar el `ranking.txt` real.
 
 ## 3. Distribución, color y tipografía
 
@@ -396,6 +424,15 @@ Con los cuatro registros de ejemplo, la tabla queda:
 navegador. Los estilos viven en `estilos.css`, un archivo aparte, para que la
 página tenga forma aunque el HTML se genere desde Python.
 
+La generación está en `generar_ranking.py`: `generar_html()` lee los datos con
+`ranking.py`, recorta el top 10 y escribe la tabla. La tabla se escapa con
+`html.escape` aunque los datos ya vengan validados: el generador no confía en su
+entrada. El archivo se puede ejecutar solo, sin Pygame:
+
+```bash
+python generar_ranking.py
+```
+
 ## 6. Estructura de archivos
 
 La consigna propone una estructura mínima y permite separar en más módulos,
@@ -410,6 +447,7 @@ Counter-Strike-Runner/
 ├── fondo.py             # los escenarios y el suelo que se desplazan
 ├── constantes.py        # todos los valores ajustables
 ├── pruebas.py           # verificaciones automáticas
+├── ranking.py           # datos: lee, valida y agrega en ranking.txt (sin pygame)
 ├── generar_ranking.py   # lee ranking.txt y arma ranking.html (no importa pygame)
 ├── ranking.txt          # datos, crece con cada partida
 ├── estilos.css          # estilos de la página
@@ -418,8 +456,11 @@ Counter-Strike-Runner/
 └── docs/                # consigna, temática y esta especificación
 ```
 
-`generar_ranking.py` no importa Pygame a propósito: así se puede ejecutar y
-probar por separado, sin levantar la ventana del juego.
+`ranking.py` y `generar_ranking.py` no importan Pygame a propósito: así se
+pueden ejecutar y probar por separado, sin levantar la ventana del juego. La
+separación respeta las tres responsabilidades que pide la consigna: el juego
+(`juego.py`), el guardado de datos (`ranking.py`) y la generación del ranking
+(`generar_ranking.py` + `estilos.css`).
 
 `personaje.py` está aparte de `juego.py` por la misma razón: la física y el
 dibujo del jugador se pueden probar sin abrir una ventana ni construir
@@ -430,12 +471,17 @@ ellas.
 
 ## 7. Las escenas
 
-`juego.py` tiene cuatro escenas y el flujo va de izquierda a derecha:
+`juego.py` tiene cinco escenas y el flujo va de izquierda a derecha:
 
 ```text
-titulo --ESPACIO--> equipo --CLICK--> juego --CHOQUE--> gameover
-  ^                                                    |
-  +--------------------- ESPACIO/ENTER/ESC/CLICK ------+
+                    ESPACIO            CLICK            CHOQUE
+ titulo -------------------> equipo -----------> juego ---------> gameover
+   ^                          |                   |                  |
+   |                    ESC   |             ESC   |        ENTER/SPACE/click
+   |                          +-------------------+                  v
+   |                                                                 |
+   |   ESC (cancela, no guarda)                                      v
+   +------------------- iniciales --ENTER (guarda + abre ranking)-- (navegador)
 ```
 
 | Escena | Qué hace |
@@ -443,7 +489,8 @@ titulo --ESPACIO--> equipo --CLICK--> juego --CHOQUE--> gameover
 | `titulo` | El nombre del juego y el aviso de insertar una moneda. `ESPACIO` pasa a la elección, `ESC` sale. |
 | `equipo` | Los dos personajes a la vista. Un click elige y arranca. `ESC` vuelve. |
 | `juego` | La partida: fondo por zona, obstáculos, personaje y puntaje. `ESC` vuelve al título. |
-| `gameover` | El puntaje final. `SPACE`/`ENTER`/`ESC`/click vuelven al título. |
+| `gameover` | El puntaje final. `SPACE`/`ENTER`/click pasan a las iniciales; `ESC` vuelve al título. |
+| `iniciales` | Las 3 letras. `ENTER` guarda, regenera y abre `ranking.html`; `ESC` cancela. |
 
 La pantalla de título **no anuncia los controles**: se anuncian en la de
 elección, que es donde se elige el personaje y arranca la partida.

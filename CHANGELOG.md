@@ -2,6 +2,75 @@
 
 Los cambios del proyecto, de la versión más reciente a la más antigua.
 
+## 1.5.2 - 2026-10-22
+
+### Cambiado
+
+- **Rediseño del menú de inicio y selección de personaje.** Ambos se unifican al
+  estilo arcade del resto de las pantallas: panel central semitransparente con
+  marco dorado, sombras en el título/etiquetas, línea decorativa dorada y avisos
+  parpadeantes. Se agrega el suelo animado y un pie con los controles. En la
+  selección de equipo aparece un `VS` central, flecha parpadeante sobre el
+  seleccionado y los paneles resaltan con el color de acento.
+
+## 1.5.1 - 2026-10-22
+
+### Cambiado
+
+- **Rediseño de `game over` e `iniciales`.** Ahora usan el fondo animado del
+  juego, un panel central semitransparente con marco dorado y mayor jerarquía
+  visual. El game over muestra una frase temática elegida al azar desde
+  `constantes.FRASES_GAMEOVER`. La pantalla de iniciales resalta el casillero
+  activo con el color de acento, flechas parpadeantes y la letra más grande.
+
+### Agregado
+
+- Helpers para dibujo: `dibujar_texto_con_sombra()`, `dibujar_panel()`,
+  `dibujar_triangulo()` y `_parpadea()`.
+- Constantes para las dos pantallas (`ALFA_PANEL`, `COLOR_PANEL`,
+  `GAMEOVER_PANEL`, `INICIALES_PANEL`, `FRASES_GAMEOVER`, `ESCENARIO_GAMEOVER`,
+  fuentes de etiqueta y slot).
+
+## 1.5.0 - 2026-10-22
+
+### Agregado
+
+- **Ranking histórico completo.** Al chocar, el juego pasa por la pantalla de
+  iniciales y al confirmar escribe la partida en `ranking.txt`, regenera
+  `ranking.html` y abre la página en el navegador.
+- **Pantalla de iniciales** (`EscenaIniciales`): 3 letras al estilo arcade. Las
+  flechas cambian la letra y mueven el cursor, `A`..`Z` escribe directo,
+  `BACKSPACE` corrige y `ENTER` confirma. `ESC` cancela sin guardar.
+- **`ranking.py`**: lee, valida y agrega partidas en `ranking.txt` sin Pygame.
+  Saltea las líneas mal formadas con un aviso, crea el archivo si no existe y
+  nunca sobreescribe el historial. Ordena por puntaje descendente y desempata por
+  la partida más antigua; calcula el top 10, la columna D y el K/D.
+- **`generar_ranking.py`**: arma `ranking.html` desde los datos, con la tabla del
+  top 10. Se puede ejecutar solo (`python generar_ranking.py`) porque no importa
+  Pygame. El contenido se escapa con `html.escape`.
+- **`estilos.css`**: estética arcade de Counter-Strike, con scanlines, podio para
+  el top 3 y las columnas del scoreboard (POS, INICIALES, EQUIPO, SCORE, K, D,
+  K/D, FECHA).
+- `ranking.txt` con tres partidas de ejemplo y `ranking.html` generado.
+- `juego.ruta_ranking`, `juego.ruta_ranking_html` y `juego.abrir_ranking()`: el
+  guardado y la apertura del navegador viven en el juego, no en la escena, para
+  poder reemplazarlos en las pruebas.
+- 21 verificaciones nuevas de datos, HTML e ingreso de iniciales. `pruebas.py`
+  pasa de 98 a 119.
+
+### Cambiado
+
+- `EscenaJuego._terminar()` ahora guarda también `juego.ultimas_personas`, el
+  campo 5 de `ranking.txt` (personas superadas en la partida).
+- `EscenaGameOver` ya no vuelve al título: `SPACE`/`ENTER`/click pasan a las
+  iniciales y `ESC` vuelve al título sin guardar.
+- `constantes.COLOR_ERROR`, para el aviso de que no se pudo guardar el ranking.
+
+### Corregido
+
+- Si `ranking.txt` no se puede escribir, el juego ya no se cae: muestra el error
+  en pantalla y `ENTER` vuelve al título.
+
 ## 1.4.0 - 2026-10-22
 
 ### Agregado

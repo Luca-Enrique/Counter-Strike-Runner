@@ -41,11 +41,13 @@ python juego.py
 
 ## Estado actual
 
-- Escenas: título, elección de equipo, partida y game over mínimo.
+- Escenas: título, elección de equipo, partida, game over e ingreso de iniciales.
 - Partida: salto, agachado, obstáculos, colisión, puntaje, fondos por zona y
   suelo con parallax.
-- Pendiente: iniciales, `ranking.txt`, `ranking.html` y la generación del
-  ranking.
+- Ranking: las iniciales se guardan en `ranking.txt` al terminar cada partida, se
+  regenera `ranking.html` y se abre solo en el navegador.
+- Completo: la consigna pide juego, guardado histórico y ranking HTML, y las tres
+  partes están implementadas y cubiertas por pruebas.
 
 ## Pruebas
 
@@ -59,7 +61,24 @@ que corre incluso en una máquina sin pantalla.
 
 Las pruebas cubren la resolución virtual y el letterbox, el recorte de delta, la
 física del salto y del agachado, los controles, la elección de equipo, los
-fondos por zona, los obstáculos, la colisión, el suelo y el game over mínimo.
+fondos por zona, los obstáculos, la colisión, el suelo, el game over, el ingreso
+de iniciales, el formato de `ranking.txt` y la generación de `ranking.html`.
+
+## Ranking
+
+Al chocar, el juego pasa por el ingreso de iniciales (3 letras, con las flechas y
+con el teclado) y al confirmar:
+
+1. agrega la partida al final de `ranking.txt` (nunca lo sobreescribe);
+2. regenera `ranking.html` con el top 10;
+3. abre la página en el navegador.
+
+Los datos se leen, validan y ordenan en `ranking.py` y la página se arma en
+`generar_ranking.py`, que se puede correr solo:
+
+```bash
+python generar_ranking.py
+```
 
 ## Estructura de archivos
 
@@ -71,6 +90,7 @@ Counter-Strike-Runner/
 ├── fondo.py             # escenarios y suelo que se desplazan
 ├── constantes.py        # todos los valores ajustables
 ├── pruebas.py           # verificaciones automáticas
+├── ranking.py           # datos: lee, valida y agrega en ranking.txt (sin pygame)
 ├── generar_ranking.py   # lee ranking.txt y arma ranking.html (no importa pygame)
 ├── ranking.txt          # datos, crece con cada partida
 ├── estilos.css          # estilos de la página
