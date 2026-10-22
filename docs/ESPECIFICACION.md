@@ -84,6 +84,122 @@ tener un límite para que no sea imposible".
 La altura del salto sale de la fórmula `altura = v² / (2 · g)`. Con los valores
 de arriba, `900² / (2 · 2400) = 168.75` píxeles.
 
+### Por qué el salto usa la solución exacta y no suma velocidad
+
+La altura se calcula con la solución cerrada de la caída libre:
+
+```text
+y(t) = y₀ + v₀ · t + (g / 2) · t²
+```
+
+y no sumando la velocidad fotograma a fotograma. La diferencia parece un detalle
+pero importa por dos razones:
+
+- **La altura es la misma siempre.** La fórmula da exactamente 168.75 px. Sumando
+  a mano, el punto más alto cae 7.75 px más bajo a 60 por segundo, y 16 px más
+  bajo a 30: la altura del salto dependería de la máquina.
+- **Es el mismo código a cualquier tasa de fotogramas.** `personaje.py` calcula
+  la posición a partir del tiempo transcurrido, no de cuántos fotogramas
+  pasaron.
+
+El tiempo en el aire se mide de forma continua (0.75 s), y el rectángulo se
+coloca recién redondeado a píxel entero. Guardar la cuenta en coma flotante y
+redondear solo al dibujar evita que el redondeo se acumule.
+
+## 2.1 El personaje
+
+`personaje.py` tiene la física y el dibujo. No sabe qué escena lo usa ni le
+interesan los obstáculos: la escena le dice cuándo saltar o agachar y él solo
+avanza.
+
+| Estado | Qué hace |
+| --- | --- |
+| Correr | Siempre que está apoyado. Un único sprite estático, sin animación. |
+| Saltar | Un toque de `ESPACIO` / `ARRIBA` / click izquierdo. En el aire no hace nada: no hay doble salto. |
+| Agachado | `ABAJO` / click derecho baja el rectángulo de 96 a 56 px. **Solo en el suelo.** |
+
+Salir de un agachado con `ESPACIO` levanta al personaje antes de saltar, así que
+saltar y agacharse no se contradicen.
+
+El agachado no aplica en el aire porque no hay sprite de caída: se usaría el de
+salto y no se vería la diferencia. En su lugar, **mantener `ABAJO` apretado en el
+aire acelera la caída** (ver abajo).
+
+### La caída rápida
+
+`ABAJO` o el click derecho mantenidos mientras el personaje está en el aire cambian
+la gravedad a 2× (`GRAVEDAD_CAIDA_RAPIDA`). Sirve para bajar antes y meterse bajo
+un obstáculo cuando el salto normal no alcanza.
+
+La física no se reescribe: la parábola **se reinicia desde donde está el
+personaje**, con la posición y la velocidad que ya tenía. Por eso no hay un salto
+de posición al apretar, que sería un teletransporte. El efecto es que el ascenso
+restante se acorta y la bajada se acelera, de golpe y continuo.
+
+El salto normal no cambia: sin `ABAJO` el apex sigue siendo 168.75 px.
+
+### El agachado es un recorte, no una deformación
+
+El sprite de `agacharse.png` tiene una proporción ancha (0.94) para ser una
+persona, así que si se escala directo a los 56 px de la hitbox queda chico y con
+la cabeza desproporcionada. Estirarlo en horizontal para compensar lo deforma y
+queda peor todavía.
+
+La solución es **recortar**. Primero se carga `agacharse.png` al mismo alto que
+el de correr (96 px), así la cabeza sale del mismo tamaño; recién entonces se
+muestran los **56 pixeles de arriba** y se ocultan las piernas. El corte no
+reescala nada: la cabeza conserva sus píxeles originales.
+
+Después del corte se recorta el margen transparente que queda. Sin ese paso, el
+lienzo del sprite escalado (unos 90 px de ancho) se centraría sobre la hitbox de
+76 px y el dibujo se vería corrido de lugar. Con el recorte del margen, el torso
+visible queda centrado y nunca más ancho que la hitbox. La prueba
+`_agachado_entra_en_la_hitbox` lo comprueba.
+
+El corte se hace sobre el sprite de `agacharse.png`, no sobre el de correr: lo
+que se ve agachado es la pose de agacharse, con las piernas ocultas.
+
+### El rectángulo manda
+
+El rectángulo de colisión **nunca** se deduce del ancho del fotograma que se
+está dibujando. Hay dos razones, y las dos son bugs reales que se evitaron:
+
+- **El ancho no se recalcula con el estado.** Cada estado se dibuja con un
+  único sprite, pero el ancho de la hitbox no sale del sprite dibujado: sale del
+  sprite de correr. Si saliera del que se está dibujando, la hitbox cambiaría al
+  pasar de un estado a otro.
+- **El agachado no achica el ancho.** Solo el alto. Si la hitbox se angostara al
+  agacharse, pasarían obstáculos que en realidad golpean.
+
+El sprite se dibuja centrado sobre el rectángulo, nunca al revés. Así lo que se
+ve y lo que colisiona son siempre lo mismo.
+
+### Los sprites
+
+| Estado | Alto en pantalla |
+| --- | --- |
+| Correr | 96 px |
+| Saltar | 96 px |
+| Agachado | 56 px |
+
+Los PNG miden lo que miden: la escala **preserva la proporción** y se hace por
+alto, salvo el proyectil, que es la excepción y se escala por largo (su
+proporción es de 3.85:1). Por eso el tamaño de los archivos es irrelevante y no
+hizo falta redimensionar nada a mano.
+
+Al cargar, cada imagen se recorta con `get_bounding_rect()` para sacarle el
+margen transparente que traen los sprites de personaje y obstáculo. Sin ese
+recorte, el rectángulo de colisión sería más grande que el dibujo y golpearía
+cosas que no se ven.
+
+### Si falta un archivo
+
+`cargar_textura()` devuelve `None` si el archivo no existe, y el estado se dibuja
+como un rectángulo de color del mismo tamaño. El juego arranca siempre, aunque
+falte un asset. El recorte con `smoothscale` y no con `scale` es por lo mismo:
+los sprites de origen son muy grandes y hay que reducirlos mucho, y el
+filtrado evita que queden bordes irregulares.
+
 ## 3. Distribución, color y tipografía
 
 Estos valores **no salen de la consigna ni de la temática**: se eligieron para que
@@ -93,6 +209,8 @@ marcados como `PROPUESTA` para distinguirlos de los que sí están fijados.
 | Constante | Valor | Motivo |
 | --- | --- | --- |
 | Altura del suelo | 460 px | Deja 80 px de piso dibujado debajo de la línea. |
+| Posición horizontal del jugador | 120 px | Fija: lo que se desplaza es el escenario, no el jugador. |
+| Proporción del personaje sin sprite | 0.9 | Ancho de reserva cuando no hay imagen. |
 | Tamaño de fuente de título | 64 px | El título tiene que leerse de lejos. |
 | Tamaño de fuente de texto | 32 px | Controles y mensajes. |
 | Tamaño de fuente de puntaje | 28 px | Va en una esquina, no compite con el juego. |
@@ -100,6 +218,7 @@ marcados como `PROPUESTA` para distinguirlos de los que sí están fijados.
 | Color del suelo | RGB(58, 62, 72) | Un tono más claro que el fondo, da profundidad. |
 | Color del texto | RGB(232, 236, 240) | Blanco apagado, no cansa la vista. |
 | Color de acento | RGB(240, 196, 25) | Amarillo de recreativa, solo para lo que llama la atención. |
+| Color del personaje sin sprite | RGB(86, 122, 164) | Azul apagado. Solo aparece si falta un archivo. |
 | Color de las barras | RGB(0, 0, 0) | No es un color del juego: es la ventana donde no entra la imagen. |
 
 La tipografía usa por ahora la fuente que viene con Pygame, así que el juego no
@@ -193,6 +312,7 @@ datos y la generación del ranking.
 ```text
 Counter-Strike-Runner/
 ├── juego.py             # punto de entrada: ventana, bucle y escenas
+├── personaje.py         # la física y el dibujo del jugador
 ├── constantes.py        # todos los valores ajustables
 ├── pruebas.py           # verificaciones automáticas
 ├── generar_ranking.py   # lee ranking.txt y arma ranking.html (no importa pygame)
@@ -205,3 +325,43 @@ Counter-Strike-Runner/
 
 `generar_ranking.py` no importa Pygame a propósito: así se puede ejecutar y
 probar por separado, sin levantar la ventana del juego.
+
+`personaje.py` está aparte de `juego.py` por la misma razón: la física y el
+dibujo del jugador se pueden probar sin abrir una ventana ni construir
+escenas. `juego.py` se queda con lo que le corresponde: ventana, bucle, escenas
+y el reparto del trabajo entre ellas.
+
+## 7. Las escenas
+
+`juego.py` tiene tres escenas y el flujo va de izquierda a derecha:
+
+```text
+titulo  --ESPACIO-->  equipo  --CLICK-->  juego
+```
+
+| Escena | Qué hace |
+| --- | --- |
+| `titulo` | Solo el nombre del juego. `ESPACIO` pasa a la elección, `ESC` sale. |
+| `equipo` | Los dos personajes a la vista. Un click elige y arranca. `ESC` vuelve. |
+| `juego` | La partida. |
+
+La pantalla de título **no anuncia los controles**: se anuncian en la de
+elección, que es donde se elige el personaje y arranca la partida.
+
+### El equipo se elige por la mitad de la pantalla
+
+El click se decide por la **mitad de la pantalla**: izquierda es CT, derecha es T.
+No se mira dónde cayó el retrato.
+
+Eso es deliberado. Si la decisión dependiera de la imagen, un asset faltante
+rompería la selección sin avisar. Con la mitad, el juego elige equipo siempre,
+y el retrato es solo decoración: si falta el archivo, se dibuja un rectángulo
+del color del equipo y el click sigue funcionando igual.
+
+Los retratos salen de `assets/obstaculos/persona_ct.png` y `persona_t.png`: son
+los mismos sprites que después van a ser obstáculos, así que la elección muestra
+exactamente la misma cara que se va a ver jugando.
+
+El equipo elegido queda en `juego.equipo` y no se vuelve a preguntar. Es el
+**campo 3 de `ranking.txt`**, así que la escena de partida lo lee de ahí para
+cargar los sprites, sin que la escena tenga que saber de dónde salió.

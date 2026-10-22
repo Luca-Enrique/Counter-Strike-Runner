@@ -22,9 +22,13 @@ El jugador corre automáticamente mientras que la posición horizontal del perso
 Las acciones del jugador serán:
 
 ```text
-SPACE/ARRIBA/CLICK IZQ → SALTAR
-ABAJO/CLICK DER → AGACHARSE
+SPACE/ARRIBA/W/CLICK IZQ → SALTAR
+ABAJO/S/CLICK DER → AGACHARSE
 ```
+
+En la elección de personaje, `A`/`D` y las flechas mueven el resaltado (lo
+mismo que apuntar con el ratón) y `SPACE`, `ENTER` o el click izquierdo
+confirman la elección.
 
 La consigna exige como mínimo que el personaje salte con la tecla espacio. Las
 teclas adicionales y los clicks de mouse son un agregado de la temática, no un
@@ -40,7 +44,7 @@ El personaje tendrá apariencia inspirada en personajes de Counter-Strike.
 
 El jugador puede elegir entre CT o T al comienzo del juego.
 
-Los sprites del personaje deben ser reconocibles y deben tener animaciones de correr, saltar y agacharse funcionales.
+Los sprites del personaje deben ser reconocibles y deben representar los estados de correr, saltar y agacharse (un fotograma por estado, sin animación).
 
 ## 5. Obstáculos
 
