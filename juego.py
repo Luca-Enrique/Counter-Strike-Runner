@@ -57,6 +57,24 @@ def calcular_destino(ancho_ventana, alto_ventana):
         alto,
     )
 
+def a_coordenadas_del_lienzo(posicion, tamano_ventana):
+    """Convierte un punto de la ventana a la imagen virtual.
+
+    El raton llega en pixeles de la ventana y las escenas dibujan sobre el
+    lienzo virtual. Con el letterbox la ventana es mas grande y las coordenadas
+    no coinciden, asi que se deshace el escalado y se corre el margen. Sin
+    esto, en pantalla completa la mitad de la pantalla no cae donde parece y el
+    click elige el equipo equivocado.
+    """
+    escala = calcular_escala(*tamano_ventana)
+    x, y, _, _ = calcular_destino(*tamano_ventana)
+
+    # Al minimizar, la ventana puede llegar a (0, 0). No hay mapeo posible.
+    if escala <= 0:
+        return posicion
+
+    return (posicion[0] - x) / escala, (posicion[1] - y) / escala
+
 def calcular_puntaje(segundos):
     """El puntaje son los segundos que llevas vivo, por diez.
 
@@ -258,7 +276,7 @@ class EscenaEquipo(Escena):
         if evento.type == pygame.KEYDOWN:
             self._tecla(evento.key)
         elif evento.type == pygame.MOUSEMOTION:
-            self._apuntar(evento.pos[0])
+            self._apuntar_en_ventana(evento.pos)
         elif evento.type == pygame.MOUSEBUTTONDOWN:
             self._click(evento)
 
@@ -276,11 +294,14 @@ class EscenaEquipo(Escena):
         # Solo el boton izquierdo: el derecho es el de agacharse en la partida.
         if evento.button != constantes.BOTON_IZQUIERDO:
             return
-        self._apuntar(evento.pos[0])
+        self._apuntar_en_ventana(evento.pos)
         self._elegir(self.resaltado)
 
-    def _apuntar(self, x):
-        """Resalta el equipo de la mitad donde esta `x`."""
+    def _apuntar_en_ventana(self, posicion):
+        """Resalta el equipo de la mitad donde cae ese punto de la ventana."""
+        x, _ = a_coordenadas_del_lienzo(
+            posicion, self.juego.ventana.get_size()
+        )
         self.resaltado = EQUIPOS[0] if x < constantes.ANCHO / 2 else EQUIPOS[-1]
 
     def _elegir(self, equipo):

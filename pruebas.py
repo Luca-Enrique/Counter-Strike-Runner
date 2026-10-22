@@ -70,13 +70,14 @@ def personaje_en_suelo():
     """Un personaje recien creado, apoyado y sin sprites."""
     return personaje.Personaje()
 
-
-def juego_stub():
+def juego_stub(tamano_ventana=None):
     """Un Juego stub: solo lo que necesitan las escenas para probarse.
 
-    No abre ventana. Las escenas solo necesitan las fuentes, los retratos y un
-    sitio donde anotar el cambio de escena. Los eventos se escriben a mano.
+    No abre ventana. Las escenas solo necesitan las fuentes, los retratos, el
+    tamano de la ventana para mapear el raton y un sitio donde anotar el cambio
+    de escena. Los eventos se escriben a mano.
     """
+
     class JuegoStub:
         fuentes = juego.cargar_fuentes()
         lienzo = juego.Lienzo()
@@ -85,6 +86,9 @@ def juego_stub():
             self.cambio_de_escena = None
             self.equipo = "CT"
             self.retratos_equipo = {}
+            self.ventana = VentanaDePrueba(
+                tamano_ventana or (constantes.ANCHO, constantes.ALTO)
+            )
 
         def cambiar_escena(self, nombre):
             self.cambio_de_escena = nombre
@@ -93,6 +97,16 @@ def juego_stub():
             pass
 
     return JuegoStub()
+
+
+class VentanaDePrueba:
+    """Una ventana falsa: solo el tamano, para probar el mapeo del raton."""
+
+    def __init__(self, tamano):
+        self._tamano = tamano
+
+    def get_size(self):
+        return self._tamano
 
 
 def escena_de_juego():
@@ -104,9 +118,9 @@ def escena_de_juego():
     return escena
 
 
-def escena_de_equipo():
+def escena_de_equipo(tamano_ventana=None):
     """Una EscenaEquipo con el juego stub."""
-    escena = juego.EscenaEquipo(juego_stub())
+    escena = juego.EscenaEquipo(juego_stub(tamano_ventana))
     escena.inicializar()
     return escena
 
@@ -661,6 +675,37 @@ def _eleccion_dibuja_el_fondo():
     )
 
 
+def _mapea_el_raton_al_lienzo():
+    """Un punto de la ventana se traduce a su lugar en el lienzo virtual.
+
+    En 1920x1080 el lienzo ocupa toda la ventana al doble de escala, asi que la
+    mitad del CT en el lienzo (x=240) esta en la ventana en x=480.
+    """
+    tamano = (1920, 1080)
+    return (
+        casi_igual(juego.a_coordenadas_del_lienzo((480, 0), tamano)[0], 240)
+        and casi_igual(juego.a_coordenadas_del_lienzo((1440, 0), tamano)[0], 720)
+        and casi_igual(juego.a_coordenadas_del_lienzo((960, 0), tamano)[0], 480)
+    )
+
+
+def _click_en_pantalla_completa():
+    """En pantalla completa el click elige el equipo donde se ve.
+
+    Antes se comparaba la coordenada cruda de la ventana con la mitad del
+    lienzo, asi que con la ventana al doble de escala la zona de x=480 a x=960
+    elegia T aunque en pantalla se viera CT.
+    """
+    for x, esperado in ((480, "CT"), (1440, "T")):
+        escena = escena_de_equipo((1920, 1080))
+        escena.manejar_eventos(
+            boton(pygame.MOUSEBUTTONDOWN, constantes.BOTON_IZQUIERDO, (x, 540))
+        )
+        if (escena.juego.equipo, escena.juego.cambio_de_escena) != (esperado, "juego"):
+            return False
+    return True
+
+
 def _fondo_se_desplaza():
     """El fondo del titulo avanza con el tiempo."""
     fondo_titulo = fondo.Fondo()
@@ -983,6 +1028,12 @@ def casos():
 
         ("apuntar con el raton resalta el equipo de esa mitad",
          _hover_resalta()),
+
+        ("el raton se mapea del tamano de la ventana al lienzo",
+         _mapea_el_raton_al_lienzo()),
+
+        ("en pantalla completa el click elige el equipo donde se ve",
+         _click_en_pantalla_completa()),
 
         ("SPACE confirma el equipo resaltado",
          _espacio_confirma_el_resaltado()),
