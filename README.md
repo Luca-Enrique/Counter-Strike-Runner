@@ -39,6 +39,14 @@ pip install -r requirements.txt
 python juego.py
 ```
 
+## Estado actual
+
+- Escenas: título, elección de equipo, partida y game over mínimo.
+- Partida: salto, agachado, obstáculos, colisión, puntaje, fondos por zona y
+  suelo con parallax.
+- Pendiente: iniciales, `ranking.txt`, `ranking.html` y la generación del
+  ranking.
+
 ## Pruebas
 
 ```bash
@@ -46,18 +54,21 @@ python pruebas.py
 ```
 
 Devuelve `0` si todo pasa y `1` si algo falla, así que sirve para automatizar el
-control. Solo verifica funciones puras, sin abrir ventana: corre incluso en una
-máquina sin pantalla.
+control. No abre ventana: el controlador de video se pone en modo `dummy`, así
+que corre incluso en una máquina sin pantalla.
 
-Las pruebas cubren el escalado con letterbox, el centrado de la imagen, el
-recorte de delta y la altura del salto. Cuando se agregue el personaje, la física
-y el ranking, se suman las suyas.
+Las pruebas cubren la resolución virtual y el letterbox, el recorte de delta, la
+física del salto y del agachado, los controles, la elección de equipo, los
+fondos por zona, los obstáculos, la colisión, el suelo y el game over mínimo.
 
 ## Estructura de archivos
 
 ```text
 Counter-Strike-Runner/
 ├── juego.py             # punto de entrada: ventana, bucle y escenas
+├── personaje.py         # física y dibujo del jugador
+├── obstaculo.py         # sprites y rectángulos de los obstáculos
+├── fondo.py             # escenarios y suelo que se desplazan
 ├── constantes.py        # todos los valores ajustables
 ├── pruebas.py           # verificaciones automáticas
 ├── generar_ranking.py   # lee ranking.txt y arma ranking.html (no importa pygame)

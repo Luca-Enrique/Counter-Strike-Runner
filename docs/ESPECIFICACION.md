@@ -75,6 +75,7 @@ fotogramas de rezago antes de recortar.
 | Velocidad de salto | −900 px/s | Produce una altura de unos 169 px, cerca de un tercio de la pantalla. |
 | Velocidad de obstáculos | 300 → 700 px/s | El máximo es un tope duro, pedido explícitamente por la temática. |
 | Intervalo de aparición | 2.0 s → 0.7 s | Ídem: la frecuencia también tiene tope. |
+| Parallax del fondo | 0.5 | El fondo avanza a la mitad de la velocidad de los obstáculos. |
 
 Estos valores son un **punto de partida**, no un dogma. Se ajustan jugando, y
 el ajuste es parte del trabajo. Lo que no se negocia es que la velocidad y la
@@ -200,6 +201,94 @@ falte un asset. El recorte con `smoothscale` y no con `scale` es por lo mismo:
 los sprites de origen son muy grandes y hay que reducirlos mucho, y el
 filtrado evita que queden bordes irregulares.
 
+## 2.2 Los obstáculos
+
+`obstaculo.py` tiene los sprites y el rectángulo de cada obstáculo. La escena
+decide cuándo aparece y a qué velocidad avanza; el obstáculo solo se mueve.
+
+| Tipo | Alto en pantalla | Cómo se pasa |
+| --- | --- | --- |
+| Caja | 56 px | Saltando. |
+| Barril | 64 px | Saltando. |
+| Barricada | 44 px | Saltando. |
+| C4 | 36 px | Saltando. |
+| Persona | 96 px | Saltando. Es siempre del equipo rival. |
+| Proyectil | 15 px de alto, 56 px de largo | Agachándose. Va por el aire. |
+
+El proyectil se apoya justo arriba de la cabeza agachada
+(`SUELO_Y - ALTO_PERSONAJE_AGACHADO - 1`). De pie golpea; agachado pasa. El
+píxel de margen evita que el redondeo haga tocarse los rectángulos.
+
+Los sprites de los obstáculos se recortan con `_caja_visible()`, que ignora las
+componentes de menos de 8 píxeles. Sin eso, un píxel perdido lejos del dibujo
+estira la caja y la hitbox queda desfasada: la caja traía dos píxeles sueltos
+en el extremo izquierdo que movían su rectángulo unos 480 px hacia adelante.
+
+La persona que aparece como obstáculo es del **equipo contrario** al elegido:
+si el jugador es CT, aparece un T. Sus iniciales y su equipo son los campos 1 y
+3 de `ranking.txt`.
+
+Los obstáculos aparecen en el borde derecho (`x = ANCHO`) y avanzan hacia la
+izquierda. Se descartan cuando su borde derecho sale de la pantalla. El primero
+aparece a los `INTERVALO_MIN` segundos, así el jugador tiene tiempo de
+acomodarse.
+
+### La dificultad
+
+La velocidad y el intervalo se interpolan linealmente con el puntaje:
+
+```text
+progreso = min(1, puntaje / UMBRAL_ZONA_AVANZADA)
+velocidad = VELOCIDAD_OBSTACULO_MIN + (MAX - MIN) · progreso
+intervalo = INTERVALO_MIN + (MAX - MIN) · progreso
+```
+
+El progreso se topa en 1 al llegar a los 1500 puntos, que es el mismo umbral de
+la zona avanzada. Así la dificultad crece y tiene un límite, como pide la
+temática, y el límite coincide con el último cambio de escenario.
+
+### El fondo y el suelo de la partida
+
+El escenario se elige por el puntaje (`zona_de_puntaje`) con los mismos
+umbrales de la progresión visual, y no rota solo: cambia cuando el puntaje
+cruza un umbral.
+
+El fondo se mueve a la mitad de la velocidad de los obstáculos
+(`FACTOR_PARALLAX_FONDO`). Esa diferencia es el parallax: da sensación de
+profundidad y evita que el fondo parezca pegado a los obstáculos.
+
+La franja inferior (`SUELO_Y..ALTO`, 80 px) la ocupa
+`assets/escenario/suelo.png`. El asset completo se escala a esos 80 px y se
+repite en copias consecutivas. El suelo avanza a la misma velocidad que los
+obstáculos (`FACTOR_PARALLAX_SUELO`), porque es la superficie sobre la que se
+apoyan. Si falta el archivo, la franja se pinta con `COLOR_SUELO`.
+
+Durante la partida el oscurecido del fondo es más suave que en el menú
+(`ALFA_OSCURECIDO_JUEGO`), porque acá lo importante es que se vean los
+obstáculos, no solo el texto.
+
+### La colisión
+
+La colisión se decide con `personaje.rect` y `obstaculo.rect`, los mismos
+rectángulos que se dibujan. Un solo contacto termina la partida. Agacharse baja
+el rectángulo del jugador lo suficiente para pasar bajo el proyectil, y saltar
+lo sube lo suficiente para pasar sobre los obstáculos de suelo (el salto llega
+a 168.75 px y el más alto mide 96 px).
+
+Cada persona superada se cuenta una sola vez, aunque tarde varios fotogramas en
+terminar de pasar al jugador. Ese contador es el campo 5 de `ranking.txt`; por
+ahora se guarda en la escena y todavía no se muestra.
+
+## 2.3 El game over
+
+Cuando el personaje choca, la escena guarda el puntaje en
+`juego.ultimo_puntaje` y cambia a `gameover`. La pantalla muestra **GAME OVER**,
+el puntaje y un aviso para volver. `SPACE`, `ENTER`, `ESC` o el click izquierdo
+vuelven al título.
+
+Esta rama no pide iniciales ni escribe el ranking: eso queda para la rama de
+game over completo.
+
 ## 3. Distribución, color y tipografía
 
 Estos valores **no salen de la consigna ni de la temática**: se eligieron para que
@@ -208,17 +297,21 @@ marcados como `PROPUESTA` para distinguirlos de los que sí están fijados.
 
 | Constante | Valor | Motivo |
 | --- | --- | --- |
-| Altura del suelo | 460 px | Deja 80 px de piso dibujado debajo de la línea. |
+| Altura del suelo | 460 px | Deja 80 px para la franja de `suelo.png`. |
 | Posición horizontal del jugador | 120 px | Fija: lo que se desplaza es el escenario, no el jugador. |
 | Proporción del personaje sin sprite | 0.9 | Ancho de reserva cuando no hay imagen. |
 | Tamaño de fuente de título | 64 px | El título tiene que leerse de lejos. |
 | Tamaño de fuente de texto | 32 px | Controles y mensajes. |
 | Tamaño de fuente de puntaje | 28 px | Va en una esquina, no compite con el juego. |
 | Color de fondo | RGB(24, 26, 32) | Casi negro azulado, para que los sprites resalten. |
-| Color del suelo | RGB(58, 62, 72) | Un tono más claro que el fondo, da profundidad. |
+| Color del suelo | RGB(58, 62, 72) | Respaldo si falta `suelo.png`. |
+| Velocidad del suelo | 1.0× obstáculos | Se mueve con los obstáculos, no con el fondo. |
 | Color del texto | RGB(232, 236, 240) | Blanco apagado, no cansa la vista. |
 | Color de acento | RGB(240, 196, 25) | Amarillo de recreativa, solo para lo que llama la atención. |
 | Color del personaje sin sprite | RGB(86, 122, 164) | Azul apagado. Solo aparece si falta un archivo. |
+| Color del obstáculo sin sprite | RGB(150, 96, 70) | Terracota apagado. Solo aparece si falta un archivo. |
+| Oscurecido del menú | Alfa 150 | El texto tiene que leerse sobre el escenario. |
+| Oscurecido de la partida | Alfa 60 | Más suave: los obstáculos tienen que verse bien. |
 | Color de las barras | RGB(0, 0, 0) | No es un color del juego: es la ventana donde no entra la imagen. |
 
 La tipografía usa por ahora la fuente que viene con Pygame, así que el juego no
@@ -313,6 +406,8 @@ datos y la generación del ranking.
 Counter-Strike-Runner/
 ├── juego.py             # punto de entrada: ventana, bucle y escenas
 ├── personaje.py         # la física y el dibujo del jugador
+├── obstaculo.py         # los sprites y el rectángulo de los obstáculos
+├── fondo.py             # los escenarios y el suelo que se desplazan
 ├── constantes.py        # todos los valores ajustables
 ├── pruebas.py           # verificaciones automáticas
 ├── generar_ranking.py   # lee ranking.txt y arma ranking.html (no importa pygame)
@@ -328,22 +423,27 @@ probar por separado, sin levantar la ventana del juego.
 
 `personaje.py` está aparte de `juego.py` por la misma razón: la física y el
 dibujo del jugador se pueden probar sin abrir una ventana ni construir
-escenas. `juego.py` se queda con lo que le corresponde: ventana, bucle, escenas
-y el reparto del trabajo entre ellas.
+escenas. `obstaculo.py` y `fondo.py` viven aparte por lo mismo: saben moverse y
+dibujarse, pero no saben de escenas ni de puntaje. `juego.py` se queda con lo
+que le corresponde: ventana, bucle, escenas y el reparto del trabajo entre
+ellas.
 
 ## 7. Las escenas
 
-`juego.py` tiene tres escenas y el flujo va de izquierda a derecha:
+`juego.py` tiene cuatro escenas y el flujo va de izquierda a derecha:
 
 ```text
-titulo  --ESPACIO-->  equipo  --CLICK-->  juego
+titulo --ESPACIO--> equipo --CLICK--> juego --CHOQUE--> gameover
+  ^                                                    |
+  +--------------------- ESPACIO/ENTER/ESC/CLICK ------+
 ```
 
 | Escena | Qué hace |
 | --- | --- |
-| `titulo` | Solo el nombre del juego. `ESPACIO` pasa a la elección, `ESC` sale. |
+| `titulo` | El nombre del juego y el aviso de insertar una moneda. `ESPACIO` pasa a la elección, `ESC` sale. |
 | `equipo` | Los dos personajes a la vista. Un click elige y arranca. `ESC` vuelve. |
-| `juego` | La partida. |
+| `juego` | La partida: fondo por zona, obstáculos, personaje y puntaje. `ESC` vuelve al título. |
+| `gameover` | El puntaje final. `SPACE`/`ENTER`/`ESC`/click vuelven al título. |
 
 La pantalla de título **no anuncia los controles**: se anuncian en la de
 elección, que es donde se elige el personaje y arranca la partida.
