@@ -25,6 +25,7 @@ import pygame
 import constantes
 import fondo
 import juego
+import obstaculo
 import personaje
 
 
@@ -84,6 +85,7 @@ def juego_stub(tamano_ventana=None):
 
         def __init__(self):
             self.cambio_de_escena = None
+            self.ultimo_puntaje = 0
             self.equipo = "CT"
             self.retratos_equipo = {}
             self.ventana = VentanaDePrueba(
@@ -792,6 +794,272 @@ def _carga_sprites_del_equipo():
     return True
 
 
+# --- Ayudantes para los obstaculos ---------------------------------------
+
+def _soltar_sobre_el_jugador(escena, tipo):
+    """Un obstaculo del tipo pedido, alineado con el jugador y sin spawns."""
+    cada_uno = obstaculo.Obstaculo(tipo, escena.juego.equipo)
+    cada_uno.x = float(escena.personaje.rect.left)
+    cada_uno.rect.left = round(cada_uno.x)
+    escena.obstaculos = [cada_uno]
+    escena.tiempo_para_obstaculo = 99.0
+    return cada_uno
+
+
+def _zonas_por_puntaje():
+    """Los cuatro escenarios, con los bordes exactos de cada umbral."""
+    return (
+        juego.zona_de_puntaje(0) == "inicial"
+        and juego.zona_de_puntaje(499) == "inicial"
+        and juego.zona_de_puntaje(500) == "combate"
+        and juego.zona_de_puntaje(999) == "combate"
+        and juego.zona_de_puntaje(1000) == "bombas"
+        and juego.zona_de_puntaje(1499) == "bombas"
+        and juego.zona_de_puntaje(1500) == "avanzada"
+        and juego.zona_de_puntaje(9999) == "avanzada"
+    )
+
+
+def _dificultad_creciente_y_acotada():
+    """La velocidad sube y el intervalo baja, con tope en la zona avanzada."""
+    return (
+        casi_igual(
+            juego.velocidad_obstaculo(0),
+            constantes.VELOCIDAD_OBSTACULO_MIN,
+        )
+        and casi_igual(
+            juego.velocidad_obstaculo(750),
+            (constantes.VELOCIDAD_OBSTACULO_MIN + constantes.VELOCIDAD_OBSTACULO_MAX) / 2,
+        )
+        and casi_igual(
+            juego.velocidad_obstaculo(1500),
+            constantes.VELOCIDAD_OBSTACULO_MAX,
+        )
+        and casi_igual(
+            juego.velocidad_obstaculo(3000),
+            constantes.VELOCIDAD_OBSTACULO_MAX,
+        )
+        and casi_igual(juego.intervalo_obstaculo(0), constantes.INTERVALO_MIN)
+        and casi_igual(
+            juego.intervalo_obstaculo(1500),
+            constantes.INTERVALO_MAX,
+        )
+        and casi_igual(
+            juego.intervalo_obstaculo(3000),
+            constantes.INTERVALO_MAX,
+        )
+        and juego.velocidad_obstaculo(750) > juego.velocidad_obstaculo(0)
+        and juego.intervalo_obstaculo(750) < juego.intervalo_obstaculo(0)
+    )
+
+
+def _la_persona_es_del_rival():
+    """Si el jugador es CT aparece un T, y al reves."""
+    return (
+        obstaculo.rival_de("CT") == "T"
+        and obstaculo.rival_de("T") == "CT"
+        and obstaculo.ruta_de("persona", "CT").endswith("persona_t.png")
+        and obstaculo.ruta_de("persona", "T").endswith("persona_ct.png")
+    )
+
+
+def _la_caja_no_arrastra_pixeles_sueltos():
+    """La caja se recorta a su cuerpo visible, no a un pixel perdido."""
+    imagen = obstaculo.cargar_obstaculo("caja")
+    if imagen is None:
+        return False
+
+    ancho, alto = imagen.get_size()
+    return (
+        alto == constantes.ALTO_OBSTACULO_CAJA
+        and ancho < 70
+        and casi_igual(ancho / alto, 448 / 440)
+    )
+
+
+def _el_obstaculo_avanza_hacia_la_izquierda():
+    caja = obstaculo.Obstaculo("caja", "CT", constantes.ANCHO)
+    inicio = caja.rect.left
+    caja.actualizar(1.0, 300.0)
+    return caja.rect.left == inicio - 300
+
+
+def _el_obstaculo_sale_de_pantalla():
+    caja = obstaculo.Obstaculo("caja", "CT")
+    caja.x = -500.0
+    caja.rect.left = round(caja.x)
+    return caja.fuera_de_pantalla()
+
+
+def _el_proyectil_va_por_encima_del_agachado():
+    caja = obstaculo.Obstaculo("caja", "CT")
+    proyectil = obstaculo.Obstaculo("proyectil", "CT")
+    return (
+        caja.rect.bottom == constantes.SUELO_Y
+        and proyectil.rect.bottom
+        == constantes.SUELO_Y - constantes.ALTO_PERSONAJE_AGACHADO - 1
+    )
+
+
+def _el_salto_pasa_sobre_una_caja():
+    """En el punto mas alto, el personaje queda por encima de una caja."""
+    pers = personaje.Personaje()
+    pers.saltar()
+    pers.actualizar(-constantes.VELOCIDAD_SALTO / constantes.GRAVEDAD)
+    caja = obstaculo.Obstaculo("caja", "CT")
+    caja.x = float(pers.rect.left)
+    caja.rect.left = round(caja.x)
+    return not caja.colisiona(pers.rect)
+
+
+def _agachado_pasa_bajo_el_proyectil():
+    escena = escena_de_juego()
+    escena.personaje.agachar(True)
+    _soltar_sobre_el_jugador(escena, "proyectil")
+    escena.actualizar(DELTA)
+    return escena.juego.cambio_de_escena is None
+
+
+def _de_pie_golpea_el_proyectil():
+    escena = escena_de_juego()
+    _soltar_sobre_el_jugador(escena, "proyectil")
+    escena.actualizar(DELTA)
+    return escena.juego.cambio_de_escena == "gameover"
+
+
+def _chocar_termina_la_partida():
+    escena = escena_de_juego()
+    _soltar_sobre_el_jugador(escena, "caja")
+    escena.actualizar(DELTA)
+    return (
+        escena.juego.cambio_de_escena == "gameover"
+        and escena.juego.ultimo_puntaje == escena.puntaje
+    )
+
+
+def _aparece_un_obstaculo():
+    escena = escena_de_juego()
+    escena._elegir_tipo = lambda: "caja"
+    escena.tiempo_para_obstaculo = 0.0
+    escena.actualizar(DELTA)
+    return len(escena.obstaculos) == 1 and escena.obstaculos[0].tipo == "caja"
+
+
+def _los_obstaculos_se_descartan():
+    escena = escena_de_juego()
+    _soltar_sobre_el_jugador(escena, "caja")
+    escena.obstaculos[0].x = -500.0
+    escena.obstaculos[0].rect.left = -500
+    escena.actualizar(DELTA)
+    return escena.obstaculos == []
+
+
+def _cuenta_las_personas_una_vez():
+    escena = escena_de_juego()
+    persona = _soltar_sobre_el_jugador(escena, "persona")
+    persona.x = float(escena.personaje.rect.left - persona.rect.width - 10)
+    persona.rect.left = round(persona.x)
+    escena.actualizar(DELTA)
+    escena.actualizar(DELTA)
+    return escena.personas_superadas == 1
+
+
+def _el_fondo_de_la_partida_no_rota():
+    un_fondo = fondo.Fondo(rotar=False)
+    antes = un_fondo.indice
+    for _ in range(int(constantes.SEGUNDOS_POR_FONDO * 60)):
+        un_fondo.actualizar(1.0 / 60)
+    return un_fondo.indice == antes
+
+
+def _el_fondo_cambia_de_escenario():
+    un_fondo = fondo.Fondo(rotar=False)
+    un_fondo.cambiar_escenario("bombas")
+    cambio = un_fondo.nombres[un_fondo.indice] == "bombas"
+    un_fondo.cambiar_escenario("no-existe")
+    return cambio and un_fondo.nombres[un_fondo.indice] == "bombas"
+
+
+def _la_partida_usa_el_fondo_de_la_zona():
+    escena = escena_de_juego()
+    escena.puntaje = constantes.UMBRAL_ZONA_BOMBAS
+    escena._actualizar_fondo(DELTA)
+    return escena.fondo.nombres[escena.fondo.indice] == "bombas"
+
+
+def _el_fondo_de_la_partida_va_mas_lento():
+    escena = escena_de_juego()
+    escena._actualizar_fondo(DELTA)
+    return (
+        casi_igual(
+            escena.fondo.velocidad,
+            juego.velocidad_obstaculo(0) * constantes.FACTOR_PARALLAX_FONDO,
+        )
+        and escena.fondo.velocidad < juego.velocidad_obstaculo(0)
+    )
+
+
+def _el_suelo_se_escala_a_la_franja():
+    un_suelo = fondo.Suelo()
+    return (
+        un_suelo.imagen is not None
+        and un_suelo.imagen.get_height() == constantes.ALTO - constantes.SUELO_Y
+    )
+
+
+def _el_suelo_avanza_con_su_velocidad():
+    un_suelo = fondo.Suelo()
+    un_suelo.velocidad = 300.0
+    un_suelo.actualizar(0.5)
+    return casi_igual(un_suelo.desplazamiento, 150.0)
+
+
+def _la_partida_mueve_el_suelo_con_los_obstaculos():
+    escena = escena_de_juego()
+    escena.puntaje = 750
+    escena._actualizar_fondo(DELTA)
+    return (
+        escena.suelo is not None
+        and casi_igual(
+            escena.suelo.velocidad,
+            juego.velocidad_obstaculo(750) * constantes.FACTOR_PARALLAX_SUELO,
+        )
+    )
+
+
+def _la_partida_dibuja_el_suelo_del_asset():
+    escena = escena_de_juego()
+    if escena.suelo is None or escena.suelo.imagen is None:
+        return False
+
+    lienzo = juego.Lienzo()
+    escena.dibujar(lienzo.superficie)
+    color = tuple(lienzo.superficie.get_at((0, constantes.SUELO_Y)))[:3]
+    esperado = tuple(escena.suelo.imagen.get_at((0, 0)))[:3]
+    return color == esperado
+
+
+def _el_suelo_sin_asset_no_rompe():
+    un_suelo = fondo.Suelo()
+    un_suelo.imagen = None
+    lienzo = juego.Lienzo()
+    un_suelo.dibujar(lienzo.superficie)
+    color = tuple(lienzo.superficie.get_at((0, constantes.SUELO_Y)))[:3]
+    return color == constantes.COLOR_SUELO
+
+
+def _gameover_vuelve_al_titulo():
+    stub = juego_stub()
+    stub.ultimo_puntaje = 777
+    escena = juego.EscenaGameOver(stub)
+    escena.inicializar()
+
+    lienzo = juego.Lienzo()
+    escena.dibujar(lienzo.superficie)
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_SPACE))
+    return escena.juego.cambio_de_escena == "titulo"
+
+
 def casos():
     """Arma la lista de (descripcion, condicion) a verificar."""
     # La altura del salto sale de la formula de docs/ESPECIFICACION.md:
@@ -1053,6 +1321,84 @@ def casos():
 
         ("el titulo dibuja el fondo encima del color plano",
          _titulo_dibuja_el_fondo()),
+
+        # --- Zonas y dificultad
+        ("cada puntaje cae en su zona, con los bordes exactos",
+         _zonas_por_puntaje),
+
+        ("la dificultad crece y se topa en la zona avanzada",
+         _dificultad_creciente_y_acotada),
+
+        # --- Obstaculos
+        ("la persona obstaculo es del equipo rival",
+         _la_persona_es_del_rival),
+
+        ("la caja no arrastra pixeles sueltos en la hitbox",
+         _la_caja_no_arrastra_pixeles_sueltos),
+
+        ("el obstaculo avanza hacia la izquierda",
+         _el_obstaculo_avanza_hacia_la_izquierda),
+
+        ("el obstaculo se descarta cuando sale de pantalla",
+         _el_obstaculo_sale_de_pantalla),
+
+        ("los de suelo van en el suelo y el proyectil por encima",
+         _el_proyectil_va_por_encima_del_agachado),
+
+        ("en el punto mas alto del salto se pasa sobre una caja",
+         _el_salto_pasa_sobre_una_caja),
+
+        ("agachado se pasa bajo el proyectil",
+         _agachado_pasa_bajo_el_proyectil),
+
+        ("de pie el proyectil golpea",
+         _de_pie_golpea_el_proyectil),
+
+        ("chocar con un obstaculo termina la partida",
+         _chocar_termina_la_partida),
+
+        ("despues del intervalo aparece un obstaculo",
+         _aparece_un_obstaculo),
+
+        ("los obstaculos que salen se descartan de la lista",
+         _los_obstaculos_se_descartan),
+
+        ("cada persona superada se cuenta una sola vez",
+         _cuenta_las_personas_una_vez),
+
+        # --- Fondo de la partida y game over
+        ("el fondo de la partida no rota: lo elige el puntaje",
+         _el_fondo_de_la_partida_no_rota),
+
+        ("el fondo puede cambiar de escenario a mano",
+         _el_fondo_cambia_de_escenario),
+
+        ("la partida usa el escenario de la zona del puntaje",
+         _la_partida_usa_el_fondo_de_la_zona),
+
+        ("el fondo de la partida va mas lento que los obstaculos",
+         _el_fondo_de_la_partida_va_mas_lento),
+
+        ("el suelo ocupa la franja inferior",
+         _el_suelo_se_escala_a_la_franja),
+
+        ("el suelo avanza con su velocidad",
+         _el_suelo_avanza_con_su_velocidad),
+
+        ("la partida mueve el suelo con los obstaculos",
+         _la_partida_mueve_el_suelo_con_los_obstaculos),
+
+        ("la partida dibuja el suelo del asset",
+         _la_partida_dibuja_el_suelo_del_asset),
+
+        ("el suelo sin asset usa el color de respaldo",
+         _el_suelo_sin_asset_no_rompe),
+
+        ("la pantalla de game over esta registrada",
+         "gameover" in juego.ESCENAS),
+
+        ("game over muestra el puntaje y vuelve al titulo",
+         _gameover_vuelve_al_titulo),
     ]
 
 
