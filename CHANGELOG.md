@@ -27,6 +27,10 @@ Los cambios del proyecto, de la versión más reciente a la más antigua.
   superponían con los del otro. Ahora cada uno se centra en su propia mitad y se
   dibuja debajo del retrato, no encima. Se quitaron las etiquetas "CT"/"T" (queda
   solo el nombre completo) y la línea de ayuda de la parte de abajo.
+- **La selección con el ratón en pantalla completa ya no se desfasa.** Se
+  comparaba la coordenada de la ventana con la mitad del lienzo virtual, así que
+  al agrandar la ventana el click elegía el equipo equivocado. Ahora el punto del
+  ratón se traduce del tamaño de la ventana al lienzo antes de decidir.
 
 ### Agregado
 
