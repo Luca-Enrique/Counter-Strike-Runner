@@ -18,11 +18,38 @@ RUTA_PERSONAJES = "assets/personajes"
 
 # --- Carga de imagenes ---------------------------------------------------
 
-def cargar_textura_original(ruta):
+def _caja_visible(imagen, umbral_alfa=127, area_minima=8):
+    """La caja del dibujo, sin los pixeles sueltos que ensucian el lienzo.
+
+    get_bounding_rect() toma cualquier pixel con algo de alfa. Unos pocos
+    pixeles perdidos lejos del sprite estiran la caja y dejan el dibujo
+    descentrado respecto de la hitbox. Se usan las componentes conexas de la
+    mascara y se descartan las que ocupan menos de area_minima pixeles.
+    """
+    mascara = pygame.mask.from_surface(imagen, umbral_alfa)
+    cajas = [
+        rect
+        for rect in mascara.get_bounding_rects()
+        if rect.w * rect.h >= area_minima
+    ]
+    if not cajas:
+        return imagen.get_bounding_rect()
+
+    caja = cajas[0].copy()
+    for otra in cajas[1:]:
+        caja.union_ip(otra)
+    return caja
+
+
+def cargar_textura_original(ruta, recorte_robusto=False):
     """Carga un sprite y le recorta el margen, sin escalarlo todavia.
 
     El recorte hace falta porque los sprites vienen sobre un lienco mas grande
     que el dibujo: sin el, la imagen apareceria con un margen invisible.
+
+    Con recorte_robusto se ignoran los pixeles sueltos del lienzo (ver
+    _caja_visible). Lo usan los obstaculos, que pueden traer basura lejos del
+    dibujo y necesitan que la hitbox coincida con lo que se ve.
 
     Sirve para las imagenes que se dibujan sueltas, que se van a escalar segun
     el alto de la pantalla.
@@ -34,7 +61,7 @@ def cargar_textura_original(ruta):
     except (pygame.error, FileNotFoundError):
         return None
 
-    caja = imagen.get_bounding_rect()
+    caja = _caja_visible(imagen) if recorte_robusto else imagen.get_bounding_rect()
     if caja.w == 0 or caja.h == 0:
         return None
 
@@ -44,12 +71,12 @@ def cargar_textura_original(ruta):
     return imagen
 
 
-def cargar_textura(ruta, alto_objetivo, ancho_objetivo=None):
+def cargar_textura(ruta, alto_objetivo, ancho_objetivo=None, recorte_robusto=False):
     """Carga un sprite, le recorta el margen y lo escala.
 
     El recorte hace falta porque los sprites vienen sobre un lienco mas grande
     que el dibujo: sin el, el personaje apareceria con un margen invisible que
-    haria mal las colisiones.
+    haria mal las colisiones. recorte_robusto se pasa a cargar_textura_original.
 
     La escala preserva la proporcion y se hace por alto, salvo que se pase un
     ancho_objetivo. Eso es lo que necesita el proyectil, que es muy alargado y
@@ -58,7 +85,7 @@ def cargar_textura(ruta, alto_objetivo, ancho_objetivo=None):
     Si el archivo no existe, o esta vacio, devuelve None. El juego tiene que
     andar aunque falte un asset.
     """
-    imagen = cargar_textura_original(ruta)
+    imagen = cargar_textura_original(ruta, recorte_robusto)
     if imagen is None:
         return None
 

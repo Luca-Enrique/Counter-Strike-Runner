@@ -2,6 +2,55 @@
 
 Los cambios del proyecto, de la versión más reciente a la más antigua.
 
+## 1.4.0 - 2026-10-22
+
+### Agregado
+
+- **Fondos por puntaje en la partida.** El escenario se elige con los umbrales
+  de zona (`zona_de_puntaje`) y cambia al cruzar los 500, 1000 y 1500 puntos. El
+  fondo avanza a la mitad de la velocidad de los obstáculos
+  (`FACTOR_PARALLAX_FONDO`) y usa un oscurecido más suave que el del menú.
+- **Obstáculos** (`obstaculo.py`): caja, barril, barricada, C4, persona y
+  proyectil. Aparecen por el borde derecho, avanzan a la velocidad que marca el
+  puntaje y se descartan al salir de pantalla. Los sprites quedan cacheados por
+  tipo y equipo para no releerlos en cada aparición.
+- La **persona** que aparece como obstáculo es siempre del equipo rival, y cada
+  una superada se cuenta una sola vez (campo 5 de `ranking.txt`, todavía sin
+  mostrar).
+- **El proyectil va por el aire**, a la altura de la cabeza agachada: de pie
+  golpea y agachado pasa. El resto de los obstáculos está en el suelo y se pasa
+  saltando.
+- **Game over mínimo**: al chocar se guarda el puntaje en
+  `juego.ultimo_puntaje` y se muestra una pantalla con GAME OVER y el SCORE.
+  `SPACE`, `ENTER`, `ESC` o el click vuelven al título.
+- **Suelo de la partida**: `assets/escenario/suelo.png` se escala a la franja de
+  80 px debajo de `SUELO_Y` y se repite mientras avanza a la velocidad de los
+  obstáculos (`FACTOR_PARALLAX_SUELO`).
+- Tests de zonas, dificultad, obstáculos, colisión, suelo, game over y parallax.
+  `pruebas.py` pasa de 73 a 98 verificaciones.
+
+### Cambiado
+
+- `Fondo` acepta `rotar`, `velocidad` y `alfa`, y puede cambiar de escenario con
+  `cambiar_escenario()`. La partida lo usa sin rotación automática.
+- `fondo.py` suma `Suelo`, con su propio cache; `EscenaJuego` lo actualiza y lo
+  dibuja entre el fondo y los obstáculos. `COLOR_SUELO` queda solo como respaldo
+  si falta el asset.
+- Los obstáculos se recortan con `recorte_robusto` y `_caja_visible()`, que
+  descartan las componentes de menos de 8 píxeles.
+- Se cachean los escenarios escalados y sus espejos.
+- Se eliminó la constante duplicada `PUNTAJE_POR_SEGUNDO` (el juego ya usaba
+  `PUNTOS_POR_SEGUNDO`).
+
+### Corregido
+
+- **La hitbox de la caja coincide con el dibujo.** El PNG trae dos píxeles
+  sueltos en el extremo izquierdo que `get_bounding_rect()` tomaba como parte
+  del sprite: el rectángulo quedaba unos 480 px más adelante que la caja
+  visible. Ahora el recorte de los obstáculos ignora esos píxeles.
+- **La partida muestra el asset del suelo** en la franja inferior y ya no
+  dibuja la línea gris de `COLOR_SUELO`.
+
 ## 1.3.0 - 2026-10-19
 
 ### Cambiado
