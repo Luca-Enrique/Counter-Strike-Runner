@@ -17,12 +17,15 @@ propias y no depende de ninguna escena. Los obstaculos viven aparte, en
 obstaculo.py, por la misma razon.
 """
 import random
+import webbrowser
 
 import pygame
 import constantes
 import fondo
+import generar_ranking
 import obstaculo
 import personaje
+import ranking
 
 # --- Funciones puras -----------------------------------------------------
 # No tocan pygame ni guardan estado: son las que se prueban en pruebas.py.
@@ -206,6 +209,8 @@ def cargar_fuentes():
         "titulo": pygame.font.Font(None, constantes.TAMANO_FUENTE_TITULO),
         "medio": pygame.font.Font(None, constantes.TAMANO_FUENTE_MEDIO),
         "puntaje": pygame.font.Font(None, constantes.TAMANO_FUENTE_PUNTAJE),
+        "etiqueta": pygame.font.Font(None, constantes.TAMANO_FUENTE_ETIQUETA),
+        "slot": pygame.font.Font(None, constantes.TAMANO_FUENTE_SLOT),
     }
 
 def dibujar_texto(superficie, cadena, fuente, color, posicion):
@@ -226,6 +231,57 @@ def dibujar_texto_centrado_en(superficie, cadena, fuente, color, centro_x, y):
     """
     imagen = fuente.render(cadena, True, color)
     superficie.blit(imagen, imagen.get_rect(center=(centro_x, y)))
+
+def dibujar_texto_con_sombra(superficie, cadena, fuente, color, centro_x, y,
+                            desplazamiento=2):
+    """Un texto centrado con una sombra oscura debajo, para darle peso.
+
+    Se dibuja dos veces: primero la copia negra corrida unos pixeles y despues
+    el texto de color encima. Es lo que hace que el titulo grande no se vea
+    plano sobre el fondo.
+    """
+    sombra = fuente.render(cadena, True, (0, 0, 0))
+    principal = fuente.render(cadena, True, color)
+    centro = (centro_x, y)
+    superficie.blit(sombra, sombra.get_rect(center=(centro_x + desplazamiento,
+                                                    y + desplazamiento)))
+    superficie.blit(principal, principal.get_rect(center=centro))
+
+def dibujar_panel(superficie, rect, relleno=constantes.COLOR_PANEL,
+                  borde=constantes.COLOR_PANEL_BORDE,
+                  alfa=constantes.ALFA_PANEL,
+                  grosor=constantes.GROSOR_BORDE_PANEL):
+    """Un panel semitransparente con marco, para agrupar el contenido.
+
+    El relleno lleva alfa para dejar ver el fondo de atras; el borde va opaco
+    para que el marco quede nitido. Sin esto las pantallas de fin de partida
+    quedaban flotando sobre el negro.
+    """
+    capa = pygame.Surface(rect.size, pygame.SRCALPHA)
+    capa.fill((*relleno, alfa))
+    superficie.blit(capa, rect.topleft)
+    pygame.draw.rect(superficie, borde, rect, grosor)
+
+def dibujar_triangulo(superficie, centro, hacia_arriba, alto, color):
+    """Una flecha triangular. Se dibuja, no se depende de un glifo de fuente."""
+    ancho = alto
+    if hacia_arriba:
+        puntos = [
+            (centro[0], centro[1] - alto),
+            (centro[0] - ancho, centro[1] + alto // 2),
+            (centro[0] + ancho, centro[1] + alto // 2),
+        ]
+    else:
+        puntos = [
+            (centro[0], centro[1] + alto),
+            (centro[0] - ancho, centro[1] - alto // 2),
+            (centro[0] + ancho, centro[1] - alto // 2),
+        ]
+    pygame.draw.polygon(superficie, color, puntos)
+
+def _parpadea(tiempo, periodo=constantes.SEGUNDOS_PARPADEO):
+    """True la mitad de cada periodo. Sirve para avisos y flechas que pulsan."""
+    return (tiempo % (periodo * 2)) < periodo
 
 # --- Escenas -------------------------------------------------------------
 class Escena:
@@ -262,9 +318,13 @@ class EscenaTitulo(Escena):
     def __init__(self, juego):
         super().__init__(juego)
         self.fondo = None
+        self.suelo = None
+        self.tiempo = 0.0
 
     def inicializar(self):
         self.fondo = fondo.Fondo()
+        self.suelo = fondo.Suelo()
+        self.tiempo = 0.0
 
     def manejar_eventos(self, evento):
         if evento.type != pygame.KEYDOWN:
@@ -276,20 +336,55 @@ class EscenaTitulo(Escena):
             self.juego.salir()
 
     def actualizar(self, delta):
+        self.tiempo += delta
         if self.fondo is not None:
             self.fondo.actualizar(delta)
+        if self.suelo is not None:
+            self.suelo.actualizar(delta)
 
     def dibujar(self, superficie):
         if self.fondo is not None:
             self.fondo.dibujar(superficie)
+        if self.suelo is not None:
+            self.suelo.dibujar(superficie)
 
-        dibujar_texto_centrado(
-            superficie, constantes.TITULO_VENTANA,
-            self.juego.fuentes["titulo"], constantes.COLOR_TEXTO, 240,
+        panel = pygame.Rect(180, 150, 600, 230)
+        dibujar_panel(superficie, panel)
+
+        centro_x = panel.centerx
+        dibujar_texto_con_sombra(
+            superficie,
+            constantes.TITULO_VENTANA,
+            self.juego.fuentes["titulo"],
+            constantes.COLOR_TEXTO,
+            centro_x,
+            panel.y + 72,
         )
-        dibujar_texto_centrado(
-            superficie, "Apretá espacio para insertar una moneda",
-            self.juego.fuentes["medio"], constantes.COLOR_ACENTO, 330,
+        pygame.draw.line(
+            superficie,
+            constantes.COLOR_ACENTO,
+            (panel.x + 80, panel.y + 112),
+            (panel.right - 80, panel.y + 112),
+            2,
+        )
+
+        if _parpadea(self.tiempo):
+            dibujar_texto_centrado_en(
+                superficie,
+                "APRETÁ ESPACIO PARA INSERTAR UNA MONEDA",
+                self.juego.fuentes["medio"],
+                constantes.COLOR_ACENTO,
+                centro_x,
+                panel.y + 154,
+            )
+
+        dibujar_texto_centrado_en(
+            superficie,
+            "SPACE/ENTER: JUGAR   ·   ESC: SALIR",
+            self.juego.fuentes["etiqueta"],
+            constantes.COLOR_LETRA_INACTIVA,
+            centro_x,
+            panel.bottom - 28,
         )
 
 class EscenaEquipo(Escena):
@@ -306,10 +401,14 @@ class EscenaEquipo(Escena):
         super().__init__(juego)
         self.retratos = {}
         self.fondo = None
+        self.suelo = None
         self.resaltado = EQUIPOS[0]
+        self.tiempo = 0.0
 
     def inicializar(self):
         self.fondo = fondo.Fondo()
+        self.suelo = fondo.Suelo()
+        self.tiempo = 0.0
         if not self.juego.retratos_equipo:
             self.juego.retratos_equipo = cargar_retratos()
 
@@ -350,20 +449,54 @@ class EscenaEquipo(Escena):
         self.juego.cambiar_escena("juego")
 
     def actualizar(self, delta):
+        self.tiempo += delta
         if self.fondo is not None:
             self.fondo.actualizar(delta)
+        if self.suelo is not None:
+            self.suelo.actualizar(delta)
 
     def dibujar(self, superficie):
         if self.fondo is not None:
             self.fondo.dibujar(superficie)
+        if self.suelo is not None:
+            self.suelo.dibujar(superficie)
 
-        dibujar_texto_centrado(
-            superficie, "ELEGI TU PERSONAJE",
-            self.juego.fuentes["medio"], constantes.COLOR_ACENTO, 90,
+        dibujar_texto_con_sombra(
+            superficie,
+            "SELECCIONÁ TU EQUIPO",
+            self.juego.fuentes["medio"],
+            constantes.COLOR_ACENTO,
+            superficie.get_width() // 2,
+            86,
+        )
+        pygame.draw.line(
+            superficie,
+            constantes.COLOR_ACENTO,
+            (280, 112),
+            (680, 112),
+            2,
         )
 
         for indice, equipo in enumerate(EQUIPOS):
             self._dibujar_equipo(superficie, equipo, indice)
+
+        dibujar_texto_con_sombra(
+            superficie,
+            "VS",
+            self.juego.fuentes["titulo"],
+            constantes.COLOR_ACENTO,
+            superficie.get_width() // 2,
+            270,
+        )
+
+        dibujar_texto_centrado_en(
+            superficie,
+            "A/D O FLECHAS: CAMBIAR   ·   SPACE/ENTER: CONFIRMAR   ·   ESC: VOLVER",
+            self.juego.fuentes["etiqueta"],
+            constantes.COLOR_LETRA_INACTIVA,
+            superficie.get_width() // 2,
+            constantes.ALTO - 36,
+        )
 
     def _dibujar_equipo(self, superficie, equipo, indice):
         """Un equipo: su retrato y su nombre, centrados en su propia mitad.
@@ -375,33 +508,45 @@ class EscenaEquipo(Escena):
         resaltado = equipo == self.resaltado
 
         caja = pygame.Rect(
-            centro_x - constantes.ANCHO // 4 + 20, 130,
-            constantes.ANCHO // 2 - 40, 260,
+            centro_x - constantes.ANCHO // 4 + 32,
+            134,
+            constantes.ANCHO // 2 - 64,
+            276,
         )
-        relleno = (constantes.COLOR_EQUIPO_RESALTADO if resaltado
-                   else constantes.COLOR_EQUIPO_ELEGIDO)
-        pygame.draw.rect(superficie, relleno, caja)
-        pygame.draw.rect(
-            superficie,
-            constantes.COLOR_ACENTO if resaltado else constantes.COLOR_EQUIPO_BORDE,
-            caja, 4 if resaltado else 2,
-        )
+        dibujar_panel(superficie, caja)
+        if resaltado:
+            pygame.draw.rect(superficie, constantes.COLOR_ACENTO, caja, 4)
+            if _parpadea(self.tiempo):
+                dibujar_triangulo(
+                    superficie,
+                    (caja.centerx, caja.top - 18),
+                    True,
+                    18,
+                    constantes.COLOR_ACENTO,
+                )
+        else:
+            pygame.draw.rect(superficie, constantes.COLOR_EQUIPO_BORDE, caja, 2)
 
         self._dibujar_retrato(superficie, equipo, caja)
 
-        dibujar_texto_centrado_en(
-            superficie, NOMBRES_DE_EQUIPO[equipo],
-            self.juego.fuentes["medio"], COLOR_DE_EQUIPO[equipo], centro_x, 410,
+        dibujar_texto_con_sombra(
+            superficie,
+            NOMBRES_DE_EQUIPO[equipo],
+            self.juego.fuentes["medio"],
+            COLOR_DE_EQUIPO[equipo],
+            centro_x,
+            442,
         )
 
     def _dibujar_retrato(self, superficie, equipo, caja):
         """El retrato del equipo, o un rectangulo de color si falta el archivo."""
-        imagen = self._retrato_escalado(equipo, caja.h)
+        imagen = self._retrato_escalado(equipo, caja.h - 40)
 
         if imagen is None:
             pygame.draw.rect(
-                superficie, COLOR_DE_EQUIPO[equipo],
-                pygame.Rect(caja.x + 40, caja.y + 20, caja.w - 80, caja.h - 40),
+                superficie,
+                COLOR_DE_EQUIPO[equipo],
+                pygame.Rect(caja.x + 48, caja.y + 32, caja.w - 96, caja.h - 64),
             )
             return
 
@@ -583,9 +728,14 @@ class EscenaJuego(Escena):
         )
 
     def _terminar(self):
-        """Termina la partida y guarda el puntaje para la pantalla de game over."""
+        """Termina la partida y guarda el resultado para la pantalla siguiente.
+
+        Son los campos 2 y 5 de ranking.txt: el puntaje y las personas
+        superadas. La escena de iniciales los escribe recien al confirmar.
+        """
         self.terminada = True
         self.juego.ultimo_puntaje = self.puntaje
+        self.juego.ultimas_personas = self.personas_superadas
         self.juego.cambiar_escena("gameover")
 
     def dibujar(self, superficie):
@@ -610,51 +760,313 @@ class EscenaJuego(Escena):
 
 
 class EscenaGameOver(Escena):
-    """Fin de la partida: el puntaje y la vuelta al titulo."""
+    def __init__(self, juego):
+        super().__init__(juego)
+        self.fondo = None
+        self.frase = None
+        self.tiempo = 0.0
+
+    def inicializar(self):
+        self.fondo = fondo.Fondo(rotar=False)
+        self.fondo.cambiar_escenario(constantes.ESCENARIO_GAMEOVER)
+        if constantes.FRASES_GAMEOVER:
+            self.frase = random.choice(constantes.FRASES_GAMEOVER)
+        else:
+            self.frase = None
+        self.tiempo = 0.0
+
+    def actualizar(self, delta):
+        self.tiempo += delta
+        if self.fondo is not None:
+            self.fondo.actualizar(delta)
 
     def manejar_eventos(self, evento):
         if evento.type == pygame.QUIT:
             self.juego.salir()
         elif evento.type == pygame.VIDEORESIZE:
             self.juego.redimensionar(evento.size)
-        elif evento.type == pygame.KEYDOWN and (
-            evento.key in CONFIRMAR or evento.key == pygame.K_ESCAPE
-        ):
+        elif evento.type == pygame.KEYDOWN and evento.key == pygame.K_ESCAPE:
             self.juego.cambiar_escena("titulo")
+        elif evento.type == pygame.KEYDOWN and evento.key in CONFIRMAR:
+            self.juego.cambiar_escena("iniciales")
         elif (
             evento.type == pygame.MOUSEBUTTONDOWN
             and evento.button == constantes.BOTON_IZQUIERDO
         ):
-            self.juego.cambiar_escena("titulo")
+            self.juego.cambiar_escena("iniciales")
 
     def dibujar(self, superficie):
-        dibujar_texto_centrado(
+        if self.fondo is not None:
+            self.fondo.dibujar(superficie)
+
+        panel = pygame.Rect(constantes.GAMEOVER_PANEL)
+        dibujar_panel(superficie, panel)
+
+        centro_x = panel.centerx
+        dibujar_texto_con_sombra(
             superficie,
             "GAME OVER",
             self.juego.fuentes["titulo"],
             constantes.COLOR_ACENTO,
-            220,
+            centro_x,
+            panel.y + 58,
         )
-        dibujar_texto_centrado(
+
+        if self.frase:
+            dibujar_texto_centrado_en(
+                superficie,
+                self.frase,
+                self.juego.fuentes["puntaje"],
+                constantes.COLOR_TEXTO,
+                centro_x,
+                panel.y + 108,
+            )
+
+        dibujar_texto_centrado_en(
+            superficie,
+            "SCORE",
+            self.juego.fuentes["etiqueta"],
+            constantes.COLOR_TEXTO,
+            centro_x,
+            panel.y + 144,
+        )
+        dibujar_texto_con_sombra(
+            superficie,
+            f"{self.juego.ultimo_puntaje}",
+            self.juego.fuentes["titulo"],
+            constantes.COLOR_ACENTO,
+            centro_x,
+            panel.y + 190,
+            desplazamiento=3,
+        )
+
+        if _parpadea(self.tiempo):
+            dibujar_texto_centrado_en(
+                superficie,
+                "PRESIONA ESPACIO PARA INGRESAR TUS INICIALES",
+                self.juego.fuentes["etiqueta"],
+                constantes.COLOR_TEXTO,
+                centro_x,
+                panel.bottom + 26,
+            )
+
+
+class EscenaIniciales(Escena):
+    """Ingreso de las iniciales, al estilo de las recreativas.
+
+    Usa el fondo animado, un panel central, casilleros con flechas y
+    parpadeo. Al confirmar se escribe la partida en ranking.txt, se regenera
+    ranking.html y se abre en el navegador una sola vez por partida.
+    """
+
+    def __init__(self, juego):
+        super().__init__(juego)
+        self.letras = ["A", "A", "A"]
+        self.slot = 0
+        self.error = None
+        self.guardado = False
+        self.fondo = None
+        self.tiempo = 0.0
+
+    def inicializar(self):
+        self.fondo = fondo.Fondo()
+        self.tiempo = 0.0
+        self.error = None
+        self.guardado = False
+        self.letras = ["A", "A", "A"]
+        self.slot = 0
+
+    def actualizar(self, delta):
+        self.tiempo += delta
+        if self.fondo is not None:
+            self.fondo.actualizar(delta)
+
+    def _letra_actual(self):
+        return self.letras[self.slot]
+
+    def _cambiar_letra(self, paso):
+        """Pasa a la letra anterior o siguiente, dando la vuelta."""
+        indice = (ranking.ALFABETO.index(self._letra_actual()) + paso)
+        self.letras[self.slot] = ranking.ALFABETO[indice % len(ranking.ALFABETO)]
+        self.error = None
+
+    def _escribir(self, key):
+        """Escribe una letra directo si la tecla es de la A a la Z."""
+        letra = chr(key).upper()
+        if letra in ranking.ALFABETO:
+            self.letras[self.slot] = letra
+            if self.slot < len(self.letras) - 1:
+                self.slot += 1
+            self.error = None
+            return True
+        return False
+
+    def manejar_eventos(self, evento):
+        if evento.type == pygame.QUIT:
+            self.juego.salir()
+            return
+        if evento.type == pygame.VIDEORESIZE:
+            self.juego.redimensionar(evento.size)
+            return
+        if evento.type != pygame.KEYDOWN:
+            return
+
+        if evento.key == pygame.K_ESCAPE:
+            self.juego.cambiar_escena("titulo")
+        elif self.guardado and evento.key in CONFIRMAR:
+            self.juego.cambiar_escena("titulo")
+        elif evento.key in CONFIRMAR:
+            self._guardar()
+        elif evento.key in (pygame.K_UP, pygame.K_w):
+            self._cambiar_letra(1)
+        elif evento.key in (pygame.K_DOWN, pygame.K_s):
+            self._cambiar_letra(-1)
+        elif evento.key in IZQUIERDA:
+            self._cambiar_slot(-1)
+        elif evento.key in DERECHA:
+            self._cambiar_slot(1)
+        elif evento.key == pygame.K_BACKSPACE:
+            self._cambiar_slot(-1)
+        elif pygame.K_a <= evento.key <= pygame.K_z:
+            self._escribir(evento.key)
+
+    def _cambiar_slot(self, paso):
+        """Mueve el cursor sin pasarse de los bordes."""
+        self.slot = min(len(self.letras) - 1, max(0, self.slot + paso))
+
+    def _guardar(self):
+        """Escribe la partida, regenera el HTML y abre el navegador.
+
+        Si algo falla, el juego no se cae: queda el aviso en pantalla y se
+        puede volver al titulo con ENTER.
+        """
+        iniciales = "".join(self.letras)
+        try:
+            ranking.agregar_partida(
+                self.juego.ruta_ranking,
+                iniciales,
+                self.juego.ultimo_puntaje,
+                self.juego.equipo,
+                self.juego.ultimas_personas,
+            )
+            generar_ranking.generar_html(
+                self.juego.ruta_ranking, self.juego.ruta_ranking_html
+            )
+        except OSError as error:
+            self.error = str(error)
+            return
+
+        self.guardado = True
+        self.juego.abrir_ranking()
+
+    def dibujar(self, superficie):
+        if self.fondo is not None:
+            self.fondo.dibujar(superficie)
+
+        panel = pygame.Rect(constantes.INICIALES_PANEL)
+        dibujar_panel(superficie, panel)
+
+        centro_x = panel.centerx
+        dibujar_texto_con_sombra(
+            superficie,
+            "INGRESA TUS INICIALES",
+            self.juego.fuentes["medio"],
+            constantes.COLOR_ACENTO,
+            centro_x,
+            panel.y + 36,
+        )
+        dibujar_texto_centrado_en(
             superficie,
             f"SCORE: {self.juego.ultimo_puntaje}",
-            self.juego.fuentes["medio"],
+            self.juego.fuentes["etiqueta"],
             constantes.COLOR_TEXTO,
-            300,
+            centro_x,
+            panel.y + 70,
         )
-        dibujar_texto_centrado(
-            superficie,
-            "APRETA ESPACIO PARA VOLVER AL TITULO",
-            self.juego.fuentes["puntaje"],
-            constantes.COLOR_TEXTO,
-            360,
+
+        self._dibujar_slots(superficie, panel)
+
+        aviso, color = self._texto_de_ayuda()
+        if _parpadea(self.tiempo) or self.error is not None or self.guardado:
+            dibujar_texto_centrado_en(
+                superficie,
+                aviso,
+                self.juego.fuentes["etiqueta"],
+                color,
+                panel.centerx,
+                panel.bottom - 26,
+            )
+
+    def _dibujar_slots(self, superficie, panel):
+        """Los tres casilleros, con flechas sobre el slot apuntado."""
+        ancho = constantes.ANCHO_SLOT_INICIALES
+        centro_x = panel.centerx
+        inicio = centro_x - (ancho * len(self.letras)) // 2
+        centro_y = panel.centery + 10
+
+        for indice, letra in enumerate(self.letras):
+            apuntado = indice == self.slot
+            caja = pygame.Rect(inicio + indice * ancho + 8, centro_y - 52, ancho - 16, 104)
+            relleno = constantes.COLOR_ACENTO if apuntado else constantes.COLOR_EQUIPO_ELEGIDO
+            alfa = 160 if apuntado else 90
+            capa = pygame.Surface(caja.size, pygame.SRCALPHA)
+            capa.fill((*relleno, alfa))
+            superficie.blit(capa, caja.topleft)
+            pygame.draw.rect(
+                superficie,
+                constantes.COLOR_ACENTO if apuntado else constantes.COLOR_EQUIPO_BORDE,
+                caja,
+                4 if apuntado else 2,
+            )
+
+            if apuntado:
+                if _parpadea(self.tiempo):
+                    dibujar_triangulo(
+                        superficie,
+                        (caja.centerx, caja.top - 16),
+                        True,
+                        constantes.ALTO_FLECHA_INICIALES,
+                        constantes.COLOR_ACENTO,
+                    )
+                    dibujar_triangulo(
+                        superficie,
+                        (caja.centerx, caja.bottom + 16),
+                        False,
+                        constantes.ALTO_FLECHA_INICIALES,
+                        constantes.COLOR_ACENTO,
+                    )
+                fuente = self.juego.fuentes["slot"]
+                color = constantes.COLOR_TEXTO
+            else:
+                fuente = self.juego.fuentes["slot"]
+                color = constantes.COLOR_LETRA_INACTIVA
+
+            dibujar_texto_centrado_en(
+                superficie, letra, fuente, color, caja.centerx, caja.centery
+            )
+
+    def _texto_de_ayuda(self):
+        """El aviso de abajo y su color, segun lo que acaba de pasar."""
+        if self.error is not None:
+            error = str(self.error)
+            if len(error) > 80:
+                error = error[:77] + "..."
+            return f"ERROR AL GUARDAR: {error}", constantes.COLOR_ERROR
+        if self.guardado:
+            return "RANKING GUARDADO Y ABIERTO. ENTER PARA SEGUIR", (
+                constantes.COLOR_ACENTO
+            )
+        return "FLECHAS: ELEGIR   ENTER: CONFIRMAR   ESC: SALIR", (
+            constantes.COLOR_TEXTO
         )
+
 
 ESCENAS = {
     "titulo": EscenaTitulo,
     "equipo": EscenaEquipo,
     "juego": EscenaJuego,
     "gameover": EscenaGameOver,
+    "iniciales": EscenaIniciales,
 }
 
 # Los controles de docs/TEMATICA.md:
@@ -700,7 +1112,25 @@ class Juego:
         # muestre sin tener que guardar la escena anterior.
         self.ultimo_puntaje = 0
 
+        # Las personas superadas en la ultima partida. Es el campo 5 de
+        # ranking.txt y lo escribe la escena de iniciales al confirmar.
+        self.ultimas_personas = 0
+
+        # Rutas del ranking y como abrirlo. Se guardan como atributos para que
+        # las pruebas puedan apuntarlas a una carpeta temporal y para no tener
+        # el lanzamiento del navegador escondido dentro de la escena.
+        self.ruta_ranking = ranking.RUTA_RANKING
+        self.ruta_ranking_html = ranking.RUTA_RANKING.with_name("ranking.html")
+        self.abrir_navegador = webbrowser.open
+
         self.cambiar_escena("titulo")
+
+    def abrir_ranking(self):
+        """Muestra ranking.html en el navegador. Un error no corta el juego."""
+        try:
+            self.abrir_navegador(self.ruta_ranking_html.resolve().as_uri())
+        except OSError:
+            pass
 
     def cambiar_escena(self, nombre):
         """Reemplaza la escena activa por la que pide el nombre dado."""

@@ -71,6 +71,11 @@ TAMANO_FUENTE_TITULO = 64
 TAMANO_FUENTE_MEDIO = 32
 TAMANO_FUENTE_PUNTAJE = 28
 
+# Tipografia chica para las etiquetas ("SCORE", ayudas) y para la letra grande
+# de cada casillero de iniciales.
+TAMANO_FUENTE_ETIQUETA = 22
+TAMANO_FUENTE_SLOT = 88
+
 # Posicion horizontal del jugador. Es fija: el personaje no se mueve de lado,
 # lo que se desplaza es el escenario.
 JUGADOR_X = 120
@@ -157,6 +162,11 @@ COLOR_FONDO = (24, 26, 32)
 COLOR_SUELO = (58, 62, 72)
 COLOR_TEXTO = (232, 236, 240)
 COLOR_ACENTO = (240, 196, 25)
+COLOR_LETRA_INACTIVA = (170, 180, 196)
+
+# Rojo del aviso cuando no se pudo guardar el ranking. Tiene que leerse como un
+# error y no como parte de la decoracion.
+COLOR_ERROR = (232, 92, 92)
 
 # Color del rectangulo que reemplaza al personaje cuando no hay sprite. El
 # juego tiene que funcionar aunque falte un archivo.
@@ -210,3 +220,55 @@ ALFA_OSCURECIDO_FONDO = 150
 # En la partida el oscurecido es mas suave: los obstaculos tienen que verse
 # bien, no solo el texto.
 ALFA_OSCURECIDO_JUEGO = 60
+
+
+# --- Pantallas de fin de partida -----------------------------------------
+# PROPUESTA. El game over y las iniciales usan el mismo fondo animado que el
+# titulo y un panel central semitransparente, para que no queden flotando sobre
+# el negro y desentonen con el resto del juego.
+#
+# Todo lo ajustable de esas dos pantallas vive aca: para cambiar una frase, el
+# tamano del panel, la transparencia o los casilleros de letra no hace falta
+# tocar juego.py.
+
+# Relleno y borde del panel central. El alfa se aplica solo al relleno; el
+# borde va opaco para que el marco se vea nitido.
+ALFA_PANEL = 200
+COLOR_PANEL = (18, 20, 26)
+COLOR_PANEL_BORDE = COLOR_ACENTO
+GROSOR_BORDE_PANEL = 3
+
+# Panel del game over y de las iniciales: (x, y, ancho, alto) en el lienzo.
+GAMEOVER_PANEL = (220, 150, 520, 240)
+INICIALES_PANEL = (250, 110, 460, 330)
+
+# Frase tematica del game over. Se elige una al azar por partida; agregar o
+# quitar frases de esta tupla es todo lo que hay que hacer para cambiarlas.
+FRASES_GAMEOVER = (
+    "HORRIBLE",
+    "HORRENDO",
+    "NT",
+    "GG",
+    "ACTUACIÓN DIGNA DE DONK",
+    "TOTALMENTE SACADO",
+    "LA COCISTE",
+    "LA ROMPISTE",
+    "SI TE PAGARAN POR JUGAR ESTO SERIAS POBRE",
+    "BIG LEAGUES ARE CALLING",
+    "ESTAS PARA UN MAJOR",
+    "ESTAS PARA UN 'MINOR' xd",
+    "DEFINITIVAMENTE HAY QUE BORRARLO",
+)
+
+# Escenario que se ve detras del game over. Es fijo: la pantalla es un cierre,
+# no una muestra que rota.
+ESCENARIO_GAMEOVER = "bombas"
+
+# Lado de cada casillero de iniciales y cuanto se agranda la letra del slot
+# apuntado respecto de las otras.
+ANCHO_SLOT_INICIALES = 90
+
+# Parpadeo de los avisos y de las flechas, en ciclos por segundo y en segundos
+# de periodo respectivamente.
+SEGUNDOS_PARPADEO = 0.7
+ALTO_FLECHA_INICIALES = 16
