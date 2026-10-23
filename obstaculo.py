@@ -15,6 +15,7 @@ import personaje
 
 RUTA_OBSTACULO = "assets/obstaculos/{}.png"
 RUTA_PERSONA = "assets/obstaculos/persona_{}.png"
+RUTA_PERSONA_MUERTO = "assets/obstaculos/persona_{}_muerto.png"
 
 # Los tipos que pueden aparecer. La escena elige uno al azar.
 TIPOS = ("caja", "barril", "barricada", "c4", "persona", "proyectil")
@@ -84,6 +85,30 @@ def cargar_obstaculo(tipo, equipo="CT"):
     return imagen
 
 
+def cargar_persona_muerta(equipo="CT"):
+    """Carga el sprite muerto del obstaculo persona para ese equipo."""
+    clave = ("persona_muerta", equipo)
+    if clave in _CACHE:
+        return _CACHE[clave]
+    ruta = RUTA_PERSONA_MUERTO.format(rival_de(equipo).lower())
+    try:
+        import pygame
+        img = pygame.image.load(ruta)
+        caja = personaje._caja_visible(img)
+        if caja.w == 0 or caja.h == 0:
+            return None
+        if (caja.x, caja.y, caja.w, caja.h) != (0, 0, img.get_width(), img.get_height()):
+            img = img.subsurface(caja).copy()
+        imagen = personaje._escalar(img, 1, constantes.ALTO_PERSONAJE)
+    except Exception:
+        try:
+            imagen = personaje.cargar_textura(ruta, ALTOS["persona"], recorte_robusto=True)
+        except Exception:
+            imagen = None
+    _CACHE[clave] = imagen
+    return imagen
+
+
 def alto_sin_sprite(tipo):
     """El alto del rectangulo de respaldo cuando falta la imagen."""
     if tipo == "proyectil":
@@ -106,6 +131,8 @@ class Obstaculo:
         self.equipo = equipo
         self.imagen = cargar_obstaculo(tipo, equipo)
         self.x = float(x)
+        self.superado = False
+        self.muerto = False
 
         if self.imagen is not None:
             ancho, alto = self.imagen.get_size()
@@ -130,10 +157,43 @@ class Obstaculo:
         # en terminar de pasar al jugador.
         self.contada = False
 
+    def marcar_muerto(self, equipo=None):
+        if self.tipo != "persona" or self.muerto:
+            return False
+        eq = equipo or self.equipo
+        try:
+            imagen_muerta = cargar_persona_muerta(eq)
+        except Exception:
+            imagen_muerta = cargar_persona_muerta(self.equipo)
+        if imagen_muerta is None:
+            self.muerto = True
+            self.superado = True
+            return True
+        self.imagen = imagen_muerta
+        try:
+            cx = self.rect.centerx
+            cy = self.rect.centery
+            bottom = self.rect.bottom
+        except Exception:
+            cx = round(self.x)
+            bottom = constantes.SUELO_Y
+        ancho, alto = self.imagen.get_size()
+        self.rect.width = ancho
+        self.rect.height = alto
+        self.rect.bottom = constantes.SUELO_Y
+        self.rect.centerx = cx
+        self.equipo = eq
+        self.muerto = True
+        self.superado = True
+        return True
+
     def actualizar(self, delta, velocidad):
         """Avanza a la izquierda a la velocidad dada, en pixeles por segundo."""
         self.x -= velocidad * delta
         self.rect.left = round(self.x)
+        if self.muerto and self.imagen is not None:
+            self.rect.bottom = constantes.SUELO_Y
+            self.rect.centerx = round(self.x + self.imagen.get_width() / 2)
 
     def dibujar(self, superficie):
         if self.imagen is None:
