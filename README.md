@@ -90,12 +90,14 @@ Counter-Strike-Runner/
 ├── fondo.py             # escenarios y suelo que se desplazan
 ├── constantes.py        # todos los valores ajustables
 ├── pruebas.py           # verificaciones automáticas
+├── sonido.py            # carga y reproduce los SFX del juego
 ├── ranking.py           # datos: lee, valida y agrega en ranking.txt (sin pygame)
 ├── generar_ranking.py   # lee ranking.txt y arma ranking.html (no importa pygame)
 ├── ranking.txt          # datos, crece con cada partida
 ├── estilos.css          # estilos de la página
 ├── ranking.html         # se regenera en cada partida
 ├── assets/              # imágenes y sonidos
+│   └── sonidos/         # efectos de sonido (.wav)
 └── docs/                # consigna, temática y especificación
 ```
 

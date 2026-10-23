@@ -2,6 +2,43 @@
 
 Los cambios del proyecto, de la versión más reciente a la más antigua.
 
+## 1.6.0 - 2026-10-23
+
+### Agregado
+
+- **Sistema de sonido** (`sonido.py`): inicializa el mixer, carga los SFX de
+  `assets/sonidos/` y los reproduce una vez, con volumen por categoría definido
+  en `constantes` (`VOLUMEN_SFX`, `VOLUMEN_UI`, `VOLUMEN_PASOS`,
+  `VOLUMEN_MUERTE`, `VOLUMEN_FINAL` y `VOLUMEN_OBSTACULO`). Si el mixer no está
+  disponible o falta un archivo, falla en silencio para que el juego nunca se
+  rompa por audio.
+- **16 efectos de sonido** en `assets/sonidos/`: salto, agacharse, cuatro pasos,
+  inicio de partida, muerte, headshot, victoria de CT, victoria de T, persona
+  superada, selección, tick, guardado correcto y error de guardado.
+- Sonidos en la partida: `go` al comenzar, salto, agacharse, pasos alternados
+  mientras corre en el suelo y aviso al superar una persona.
+- **Animación de muerte del jugador.** Al chocar se muestra `muerto.png` del
+  equipo elegido, se oscurece la pantalla y se espera a que termine el audio de
+  muerte antes de pasar al game over. Mientras muere, los controles se ignoran.
+- Sonidos en las pantallas: selección y tick en título, elección de equipo e
+  iniciales; victoria del equipo rival en el game over; confirmación y error al
+  guardar el ranking.
+- Sprites de muerte para los dos equipos (`assets/personajes/{ct,t}/muerto.png`)
+  y para la persona obstáculo (`assets/obstaculos/persona_{ct,t}_muerto.png`).
+- `personaje.cargar_muerto()`, `obstaculo.cargar_persona_muerta()` y
+  `Obstaculo.marcar_muerto()`.
+
+### Cambiado
+
+- `main()` preinicia el mixer (44100 Hz, 16 bits, estéreo, búfer 512) y llama a
+  `sonido.inicializar()` y `sonido.cargar()`.
+- La persona obstáculo superada pasa al sprite de cuerpo muerto, se marca como
+  `superado`/`muerto` y deja de colisionar con el jugador.
+- `EscenaJuego._terminar()` es idempotente y la escena ignora los eventos
+  mientras el personaje muere o la partida ya terminó.
+- En SDL dummy (pruebas automáticas) la muerte se resuelve sin animación para no
+  bloquear el bucle.
+
 ## 1.5.2 - 2026-10-22
 
 ### Cambiado
