@@ -164,6 +164,14 @@ COLOR_TEXTO = (232, 236, 240)
 COLOR_ACENTO = (240, 196, 25)
 COLOR_LETRA_INACTIVA = (170, 180, 196)
 
+# --- Sonido -----------------------------------------------------------------
+VOLUMEN_SFX = 0.5
+VOLUMEN_UI = 0.4
+VOLUMEN_PASOS = 0.35
+VOLUMEN_MUERTE = 0.6
+VOLUMEN_FINAL = 0.6
+VOLUMEN_OBSTACULO = 0.5
+
 # Rojo del aviso cuando no se pudo guardar el ranking. Tiene que leerse como un
 # error y no como parte de la decoracion.
 COLOR_ERROR = (232, 92, 92)

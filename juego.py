@@ -16,6 +16,7 @@ El personaje vive aparte, en personaje.py, porque tiene fisica y animacion
 propias y no depende de ninguna escena. Los obstaculos viven aparte, en
 obstaculo.py, por la misma razon.
 """
+import os
 import random
 import webbrowser
 
@@ -26,6 +27,7 @@ import generar_ranking
 import obstaculo
 import personaje
 import ranking
+import sonido
 
 # --- Funciones puras -----------------------------------------------------
 # No tocan pygame ni guardan estado: son las que se prueban en pruebas.py.
@@ -331,6 +333,7 @@ class EscenaTitulo(Escena):
             return
 
         if evento.key in (pygame.K_SPACE, pygame.K_RETURN):
+            sonido.reproducir("select")
             self.juego.cambiar_escena("equipo")
         elif evento.key == pygame.K_ESCAPE:
             self.juego.salir()
@@ -404,11 +407,13 @@ class EscenaEquipo(Escena):
         self.suelo = None
         self.resaltado = EQUIPOS[0]
         self.tiempo = 0.0
+        self._ultimo_resaltado = EQUIPOS[0]
 
     def inicializar(self):
         self.fondo = fondo.Fondo()
         self.suelo = fondo.Suelo()
         self.tiempo = 0.0
+        self._ultimo_resaltado = self.resaltado
         if not self.juego.retratos_equipo:
             self.juego.retratos_equipo = cargar_retratos()
 
@@ -423,18 +428,28 @@ class EscenaEquipo(Escena):
     def _tecla(self, key):
         if key == pygame.K_ESCAPE:
             self.juego.cambiar_escena("titulo")
-        elif key in IZQUIERDA:
+            return
+        anterior = self.resaltado
+        if key in IZQUIERDA:
             self.resaltado = EQUIPOS[0]
         elif key in DERECHA:
             self.resaltado = EQUIPOS[-1]
         elif key in CONFIRMAR:
+            sonido.reproducir("select")
             self._elegir(self.resaltado)
+            return
+        if anterior != self.resaltado:
+            sonido.reproducir("tick")
 
     def _click(self, evento):
         # Solo el boton izquierdo: el derecho es el de agacharse en la partida.
         if evento.button != constantes.BOTON_IZQUIERDO:
             return
+        anterior = self.resaltado
         self._apuntar_en_ventana(evento.pos)
+        if anterior != self.resaltado:
+            sonido.reproducir("tick")
+        sonido.reproducir("select")
         self._elegir(self.resaltado)
 
     def _apuntar_en_ventana(self, posicion):
@@ -442,7 +457,10 @@ class EscenaEquipo(Escena):
         x, _ = a_coordenadas_del_lienzo(
             posicion, self.juego.ventana.get_size()
         )
+        anterior = self.resaltado
         self.resaltado = EQUIPOS[0] if x < constantes.ANCHO / 2 else EQUIPOS[-1]
+        if anterior != self.resaltado:
+            sonido.reproducir("tick")
 
     def _elegir(self, equipo):
         self.juego.equipo = equipo
@@ -588,6 +606,16 @@ class EscenaJuego(Escena):
         self.tiempo_para_obstaculo = 0.0
         self.personas_superadas = 0
         self.terminada = False
+        self.muriendo = False
+        self.muerto_fade = 0.0
+        self.canales_muerte = []
+        self.tiempo_muerte = 0.0
+        self.muerto_imagen = None
+        self.muerto_rect = None
+        self.pasos_timer = 0.0
+        self.pasos_indice = 0
+        self.en_suelo_anterior = True
+        self._agachado_antes = False
 
         # Se puede reemplazar en las pruebas para que la aparicion sea
         # determinista.
@@ -609,19 +637,35 @@ class EscenaJuego(Escena):
         self.personaje = personaje.Personaje(
             texturas=personaje.recortar_agachado(texturas)
         )
+        self._agachado_antes = self.personaje.agachado
+        self.pasos_timer = 0.0
+        self.pasos_indice = 0
+        self.en_suelo_anterior = self.personaje.en_suelo
 
         self.puntaje = 0
         self.tiempo_vivido = 0.0
         self.obstaculos = []
         self.personas_superadas = 0
         self.terminada = False
+        self.muriendo = False
+        self.muerto_fade = 0.0
+        self.canales_muerte = []
+        self.tiempo_muerte = 0.0
+        self.muerto_imagen = None
+        self.muerto_rect = None
         self.fondo = fondo.Fondo(
             rotar=False, alfa=constantes.ALFA_OSCURECIDO_JUEGO
         )
         self.suelo = fondo.Suelo()
         self.tiempo_para_obstaculo = intervalo_obstaculo(0)
+        try:
+            sonido.reproducir("go")
+        except Exception:
+            pass
 
     def manejar_eventos(self, evento):
+        if self.muriendo or self.terminada:
+            return
         if evento.type == pygame.QUIT:
             self.juego.salir()
         elif evento.type == pygame.VIDEORESIZE:
@@ -629,10 +673,17 @@ class EscenaJuego(Escena):
         elif evento.type == pygame.KEYDOWN and evento.key == pygame.K_ESCAPE:
             self.juego.cambiar_escena("titulo")
         elif evento.type == pygame.KEYDOWN and evento.key in SALTAR:
+            estaba_en_suelo = self.personaje.en_suelo
             self.personaje.saltar()
+            if estaba_en_suelo and self.personaje.en_suelo is False:
+                sonido.reproducir("saltar")
+                self.pasos_timer = 0.0
         elif evento.type == pygame.KEYDOWN and evento.key in AGACHAR:
             self.tecla_agacha = True
+            if not self.personaje.agachado:
+                sonido.reproducir("agachar")
             self.personaje.agachar(True)
+            self.pasos_timer = 0.0
         elif evento.type == pygame.KEYUP and evento.key in AGACHAR:
             self.tecla_agacha = False
             self.personaje.agachar(self.raton_agacha)
@@ -643,33 +694,108 @@ class EscenaJuego(Escena):
 
     def _boton(self, boton, presionado):
         """Un boton del raton: el izquierdo salta y el derecho agacha."""
+        if self.muriendo or self.terminada:
+            return
         if boton == constantes.BOTON_IZQUIERDO:
             if presionado:
+                estaba_en_suelo = self.personaje.en_suelo
                 self.personaje.saltar()
+                if estaba_en_suelo and self.personaje.en_suelo is False:
+                    sonido.reproducir("saltar")
+                    self.pasos_timer = 0.0
         elif boton == constantes.BOTON_DERECHO:
             self._fijar_agachado(presionado)
 
     def _fijar_agachado(self, del_raton):
         """Agacha o levanta segun el raton y la tecla, sinon los dos."""
         if del_raton:
+            if not self.raton_agacha and not self.personaje.agachado:
+                sonido.reproducir("agachar")
             self.raton_agacha = True
         else:
             self.raton_agacha = False
+        estaba_agachado = self.personaje.agachado
         self.personaje.agachar(self.raton_agacha or self.tecla_agacha)
+        if not estaba_agachado and self.personaje.agachado:
+            sonido.reproducir("agachar")
+            self.pasos_timer = 0.0
 
     def actualizar(self, delta):
         if self.terminada:
+            return
+        if self.muriendo:
+            self.tiempo_muerte += delta
+            if self.muerto_fade < 255:
+                self.muerto_fade = min(255, self.muerto_fade + delta * 160)
+            c0 = self.canales_muerte[0] if hasattr(self, "canales_muerte") and len(self.canales_muerte) > 0 else None
+            c1 = self.canales_muerte[1] if hasattr(self, "canales_muerte") and len(self.canales_muerte) > 1 else None
+            muerto_term = True
+            try:
+                if sonido.reproduciendose(c0) or sonido.reproduciendose(c1):
+                    muerto_term = False
+            except Exception:
+                muerto_term = True
+            try:
+                dummy = os.environ.get("SDL_VIDEODRIVER", "").lower() == "dummy"
+            except Exception:
+                dummy = False
+            if dummy:
+                self._terminar()
+                return
+            if muerto_term or self.tiempo_muerte > 1.8 or self.muerto_fade >= 245:
+                self._terminar()
             return
 
         self.tiempo_vivido += delta
         self.puntaje = calcular_puntaje(self.tiempo_vivido)
         self.personaje.actualizar(delta)
 
+        self._actualizar_pasos(delta)
+
         self._actualizar_fondo(delta)
         self._actualizar_obstaculos(delta)
 
         if self._choca():
-            self._terminar()
+            try:
+                if self.muriendo or self.terminada:
+                    return
+                try:
+                    dummy = os.environ.get("SDL_VIDEODRIVER", "").lower() == "dummy"
+                except Exception:
+                    dummy = False
+                if dummy:
+                    self._terminar()
+                    return
+                muerto_antes = self.muriendo
+                self._iniciar_muerte()
+                if self.muriendo:
+                    return
+                if not muerto_antes:
+                    self._terminar()
+                return
+            except Exception:
+                if not self.terminada:
+                    self._terminar()
+                return
+
+    def _actualizar_pasos(self, delta):
+        if self.personaje is None or self.muriendo:
+            return
+        if getattr(self.personaje, "agachado", False):
+            self.pasos_timer = 0.0
+            return
+        if not getattr(self.personaje, "en_suelo", True):
+            self.pasos_timer = 0.0
+            return
+        self.pasos_timer += delta
+        intervalo = 0.34
+        if self.pasos_timer >= intervalo:
+            self.pasos_timer = 0.0
+            self.pasos_indice = (self.pasos_indice % 4) + 1
+            try:
+                sonido.reproducir(f"caminar_{self.pasos_indice}")
+            except Exception:
+                pass
 
     def _actualizar_fondo(self, delta):
         """Elige el escenario de la zona y mueve el fondo y el suelo."""
@@ -702,6 +828,20 @@ class EscenaJuego(Escena):
             ):
                 cada_uno.contada = True
                 self.personas_superadas += 1
+                try:
+                    sonido.reproducir("pass_persona")
+                except Exception:
+                    try:
+                        sonido.reproducir("pasar_persona")
+                    except Exception:
+                        pass
+                try:
+                    cada_uno.marcar_muerto(self.juego.equipo)
+                except Exception:
+                    try:
+                        cada_uno.marcar_muerto()
+                    except Exception:
+                        pass
 
         self.obstaculos = [
             cada_uno
@@ -722,10 +862,55 @@ class EscenaJuego(Escena):
 
     def _choca(self):
         """True si algun obstaculo se superpone con el personaje."""
-        return any(
-            cada_uno.colisiona(self.personaje.rect)
-            for cada_uno in self.obstaculos
-        )
+        if self.muriendo or self.terminada or self.personaje is None:
+            return False
+        for cada_uno in self.obstaculos:
+            try:
+                if cada_uno.tipo == "persona" and (getattr(cada_uno, "muerto", False) or getattr(cada_uno, "superado", False)):
+                    continue
+            except Exception:
+                pass
+            try:
+                if cada_uno.colisiona(self.personaje.rect):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _iniciar_muerte(self):
+        if self.muriendo or self.terminada:
+            return
+        try:
+            self.muriendo = True
+            self.muerto_fade = 0.0
+            self.tiempo_muerte = 0.0
+            self.pasos_timer = 0.0
+            try:
+                muerto = personaje.cargar_muerto(self.juego.equipo)
+                if muerto is not None and self.personaje is not None:
+                    self.muerto_imagen = muerto
+                    self.muerto_rect = muerto.get_rect(center=self.personaje.rect.center)
+                    self.muerto_rect.centerx = self.personaje.rect.centerx - 14
+                    self.muerto_rect.bottom = constantes.SUELO_Y
+                else:
+                    self.muerto_imagen = None
+                    self.muerto_rect = None
+            except Exception:
+                self.muerto_imagen = None
+                self.muerto_rect = None
+            self.canales_muerte = []
+            try:
+                c = sonido.reproducir("die")
+                self.canales_muerte.append(c)
+            except Exception:
+                pass
+            try:
+                c = sonido.reproducir("headshot")
+                self.canales_muerte.append(c)
+            except Exception:
+                pass
+        except Exception:
+            self._terminar()
 
     def _terminar(self):
         """Termina la partida y guarda el resultado para la pantalla siguiente.
@@ -733,7 +918,10 @@ class EscenaJuego(Escena):
         Son los campos 2 y 5 de ranking.txt: el puntaje y las personas
         superadas. La escena de iniciales los escribe recien al confirmar.
         """
+        if self.terminada:
+            return
         self.terminada = True
+        self.muriendo = False
         self.juego.ultimo_puntaje = self.puntaje
         self.juego.ultimas_personas = self.personas_superadas
         self.juego.cambiar_escena("gameover")
@@ -748,7 +936,11 @@ class EscenaJuego(Escena):
         for cada_uno in self.obstaculos:
             cada_uno.dibujar(superficie)
 
-        self.personaje.dibujar(superficie)
+        if self.personaje is not None:
+            if self.muriendo and self.muerto_imagen is not None and self.muerto_rect is not None:
+                superficie.blit(self.muerto_imagen, self.muerto_rect)
+            elif not self.muriendo:
+                self.personaje.dibujar(superficie)
 
         dibujar_texto(
             superficie,
@@ -757,6 +949,15 @@ class EscenaJuego(Escena):
             constantes.COLOR_TEXTO,
             (20, 20),
         )
+
+        if self.muriendo and self.muerto_fade > 0:
+            try:
+                fade = pygame.Surface(superficie.get_size())
+                fade.fill((0, 0, 0))
+                fade.set_alpha(int(self.muerto_fade))
+                superficie.blit(fade, (0, 0))
+            except Exception:
+                pass
 
 
 class EscenaGameOver(Escena):
@@ -774,6 +975,13 @@ class EscenaGameOver(Escena):
         else:
             self.frase = None
         self.tiempo = 0.0
+        try:
+            if getattr(self.juego, "equipo", "CT") == "CT":
+                sonido.reproducir("terwin")
+            else:
+                sonido.reproducir("ctwin")
+        except Exception:
+            pass
 
     def actualizar(self, delta):
         self.tiempo += delta
@@ -886,9 +1094,12 @@ class EscenaIniciales(Escena):
 
     def _cambiar_letra(self, paso):
         """Pasa a la letra anterior o siguiente, dando la vuelta."""
-        indice = (ranking.ALFABETO.index(self._letra_actual()) + paso)
+        anterior = self._letra_actual()
+        indice = (ranking.ALFABETO.index(anterior) + paso)
         self.letras[self.slot] = ranking.ALFABETO[indice % len(ranking.ALFABETO)]
         self.error = None
+        if anterior != self._letra_actual():
+            sonido.reproducir("tick")
 
     def _escribir(self, key):
         """Escribe una letra directo si la tecla es de la A a la Z."""
@@ -913,11 +1124,16 @@ class EscenaIniciales(Escena):
 
         if evento.key == pygame.K_ESCAPE:
             self.juego.cambiar_escena("titulo")
-        elif self.guardado and evento.key in CONFIRMAR:
+            return
+        if self.guardado and evento.key in CONFIRMAR:
             self.juego.cambiar_escena("titulo")
-        elif evento.key in CONFIRMAR:
+            return
+        if evento.key in CONFIRMAR:
             self._guardar()
-        elif evento.key in (pygame.K_UP, pygame.K_w):
+            return
+        anterior_slot = self.slot
+        letra_anterior = self._letra_actual() if hasattr(self, "_letra_actual") else None
+        if evento.key in (pygame.K_UP, pygame.K_w):
             self._cambiar_letra(1)
         elif evento.key in (pygame.K_DOWN, pygame.K_s):
             self._cambiar_letra(-1)
@@ -928,11 +1144,19 @@ class EscenaIniciales(Escena):
         elif evento.key == pygame.K_BACKSPACE:
             self._cambiar_slot(-1)
         elif pygame.K_a <= evento.key <= pygame.K_z:
-            self._escribir(evento.key)
+            if self._escribir(evento.key):
+                sonido.reproducir("tick")
+                return
+            return
+        if anterior_slot != self.slot or (letra_anterior != self._letra_actual()):
+            sonido.reproducir("tick")
 
     def _cambiar_slot(self, paso):
         """Mueve el cursor sin pasarse de los bordes."""
+        anterior = self.slot
         self.slot = min(len(self.letras) - 1, max(0, self.slot + paso))
+        if anterior != self.slot:
+            sonido.reproducir("tick")
 
     def _guardar(self):
         """Escribe la partida, regenera el HTML y abre el navegador.
@@ -954,9 +1178,17 @@ class EscenaIniciales(Escena):
             )
         except OSError as error:
             self.error = str(error)
+            try:
+                sonido.reproducir("save_error")
+            except Exception:
+                pass
             return
 
         self.guardado = True
+        try:
+            sonido.reproducir("save_ok")
+        except Exception:
+            pass
         self.juego.abrir_ranking()
 
     def dibujar(self, superficie):
@@ -1180,7 +1412,16 @@ class Juego:
         pygame.quit()
 
 def main():
+    try:
+        pygame.mixer.pre_init(44100, -16, 2, 512)
+    except Exception:
+        pass
     pygame.init()
+    try:
+        sonido.inicializar()
+        sonido.cargar()
+    except Exception:
+        pass
     Juego().bucle()
 
 if __name__ == "__main__":

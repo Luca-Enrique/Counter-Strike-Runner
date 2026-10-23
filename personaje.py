@@ -8,6 +8,8 @@ La idea que ordena todo el archivo: **el rectangulo manda**. El sprite se dibuja
 centrado sobre el rectangulo, nunca al reves, asi que el rectangulo que decide
 las colisiones es siempre el que se ve en pantalla.
 """
+import os
+
 import pygame
 
 import constantes
@@ -17,6 +19,37 @@ RUTA_PERSONAJES = "assets/personajes"
 
 
 # --- Carga de imagenes ---------------------------------------------------
+
+
+def cargar_muerto(equipo="CT"):
+    """Carga el sprite muerto del jugador para ese equipo."""
+    ruta = os.path.join(RUTA_PERSONAJES, equipo.lower(), "muerto.png")
+    try:
+        imagen = pygame.image.load(ruta)
+    except (pygame.error, FileNotFoundError):
+        return None
+    caja = _caja_visible(imagen)
+    if caja.w == 0 or caja.h == 0:
+        return None
+    if (caja.x, caja.y, caja.w, caja.h) != (0, 0, imagen.get_width(), imagen.get_height()):
+        imagen = imagen.subsurface(caja).copy()
+    try:
+        return _escalar(imagen, 1, constantes.ALTO_PERSONAJE)
+    except Exception:
+        return _escalar(imagen, constantes.ALTO_PERSONAJE)
+
+
+def _cargar_imagen(ruta):
+    try:
+        imagen = pygame.image.load(ruta)
+    except (pygame.error, FileNotFoundError):
+        return None
+    caja = _caja_visible(imagen)
+    if caja.w == 0 or caja.h == 0:
+        return None
+    if (caja.x, caja.y, caja.w, caja.h) != (0, 0, imagen.get_width(), imagen.get_height()):
+        imagen = imagen.subsurface(caja).copy()
+    return imagen
 
 def _caja_visible(imagen, umbral_alfa=127, area_minima=8):
     """La caja del dibujo, sin los pixeles sueltos que ensucian el lienzo.
