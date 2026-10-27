@@ -22,7 +22,11 @@ RUTA_PERSONAJES = "assets/personajes"
 
 
 def cargar_muerto(equipo="CT"):
-    """Carga el sprite muerto del jugador para ese equipo."""
+    """Carga el sprite muerto del jugador para ese equipo.
+
+    El sprite esta acostado, asi que se escala por ANCHO: escalarlo por alto lo
+    dejaba tres veces mas ancho que el personaje de pie.
+    """
     ruta = os.path.join(RUTA_PERSONAJES, equipo.lower(), "muerto.png")
     try:
         imagen = pygame.image.load(ruta)
@@ -34,9 +38,9 @@ def cargar_muerto(equipo="CT"):
     if (caja.x, caja.y, caja.w, caja.h) != (0, 0, imagen.get_width(), imagen.get_height()):
         imagen = imagen.subsurface(caja).copy()
     try:
-        return _escalar(imagen, 1, constantes.ALTO_PERSONAJE)
+        return _escalar(imagen, 1, constantes.ANCHO_PERSONAJE_MUERTO)
     except Exception:
-        return _escalar(imagen, constantes.ALTO_PERSONAJE)
+        return None
 
 
 def _cargar_imagen(ruta):
@@ -142,21 +146,6 @@ def _escalar(imagen, alto_objetivo, ancho_objetivo=None):
     # smoothscale y no scale: los sprites de origen son muy grandes y hay que
     # reducirlos mucho, y el filtrado evita que queden bordes irregulares.
     return pygame.transform.smoothscale(imagen, (ancho, alto))
-
-    if ancho_objetivo is None:
-        escala = alto_objetivo / caja.h
-    else:
-        escala = ancho_objetivo / caja.w
-
-    # smoothscale y no scale: los sprites de origen son muy grandes y hay que
-    # reducirlos mucho, y el filtrado evita que queden bordes irregulares.
-    return pygame.transform.smoothscale(
-        imagen,
-        (
-            max(1, round(caja.w * escala)),
-            max(1, round(caja.h * escala)),
-        ),
-    )
 
 
 def cargar_animacion(rutas, alto_objetivo):
@@ -318,10 +307,16 @@ class Personaje:
         """
         if not self.en_suelo:
             return
+        try:
+            juego = getattr(self, "juego", None)
+            cheats = getattr(juego, "cheats", {}) if juego is not None else {}
+            mult = 2.0 if cheats.get("jumper") else 1.0
+        except Exception:
+            mult = 1.0
         self.en_suelo = False
         self.agachado = False
         self.origen_salto = self.posicion_y
-        self.velocidad_inicial = constantes.VELOCIDAD_SALTO
+        self.velocidad_inicial = constantes.VELOCIDAD_SALTO * mult
         self.tiempo_en_el_aire = 0.0
         self.caida_rapida = False
         self._cambiar_tamano()

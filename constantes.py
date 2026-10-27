@@ -92,6 +92,9 @@ JUGADOR_X = 120
 # estetica: si se perdiera, habria obstaculos imposibles de pasar.
 ALTO_PERSONAJE = 96
 ALTO_PERSONAJE_AGACHADO = 56
+# El sprite de muerto esta acostado: si se escala por alto queda enorme de
+# ancho. Se escala por ancho, que es lo que mide el personaje de pie.
+ANCHO_PERSONAJE_MUERTO = 96
 
 # Ancho con el que se arma el rectangulo del personaje cuando no hay sprite
 # (por ejemplo en las pruebas). Si hay sprite manda el ancho real de la
@@ -172,7 +175,11 @@ VOLUMEN_MUERTE = 0.6
 VOLUMEN_FINAL = 0.6
 VOLUMEN_OBSTACULO = 0.5
 
-# Rojo del aviso cuando no se pudo guardar el ranking. Tiene que leerse como un
+# Valores por defecto para el config
+TUTORIAL_ACTIVO_DEF = True
+SONIDO_ACTIVO_DEF = True
+
+# Rojo del aviso cuando no se pudo guardar the ranking. Tiene que leerse como un
 # error y no como parte de la decoracion.
 COLOR_ERROR = (232, 92, 92)
 
@@ -280,3 +287,62 @@ ANCHO_SLOT_INICIALES = 90
 # de periodo respectivamente.
 SEGUNDOS_PARPADEO = 0.7
 ALTO_FLECHA_INICIALES = 16
+
+
+# --- Consola de comandos (F12) -------------------------------------------
+# La consola ocupa la franja inferior del lienzo y se dibuja encima de la
+# escena. Es solo presentacion: los comandos viven en consola.py.
+COLOR_CONSOLA_FONDO = (8, 10, 14)
+ALFA_CONSOLA_FONDO = 225
+COLOR_CONSOLA_TEXTO = (214, 222, 232)
+COLOR_CONSOLA_PROMPT = COLOR_ACENTO
+COLOR_CONSOLA_ERROR = COLOR_ERROR
+COLOR_CONSOLA_OK = (126, 208, 144)
+COLOR_CONSOLA_AYUDA = (138, 150, 168)
+
+ALTO_CONSOLA = 270
+TAMANO_FUENTE_CONSOLA = 16
+MAX_LINEAS_CONSOLA = 200
+MAX_HISTORIAL_CONSOLA = 50
+MAX_TEXTO_CONSOLA = 160
+SEGUNDOS_CURSOR_CONSOLA = 0.5
+
+
+# --- Mando ---------------------------------------------------------------
+# El stick izquierdo tiene que moverse mas que esto para contar como direccion.
+# Sin zona muerta, el mando tiembla solo y el menu se mueve sin querer. Se deja
+# baja para que un DualShock/DualSense viejo (que no llega a 0.8) tambien mueva.
+# Se aplica sobre los ejes ya normalizados a -1..1 (ver mando.normalizar_eje).
+MANDO_ZONA_MUERTA = 0.35
+
+# Repeticion de las direcciones al mantener apretado el D-pad o el stick.
+# Primero se espera un poco (para no repetir un toque corto) y despues se
+# repite con este intervalo.
+MANDO_RETRASO_REPETICION = 0.30
+MANDO_INTERVALO_REPETICION = 0.14
+
+# Indices del respaldo crudo, para mandos que SDL no reconoce como
+# controlador. En el camino normal se usan los botones normalizados de pygame
+# (CONTROLLER_BUTTON_*), que funcionan igual en Xbox y PlayStation.
+MANDO_BOTON_A_CRUDO = 0
+MANDO_BOTON_B_CRUDO = 1
+MANDO_BOTON_TUTORIAL_CRUDO = 3
+MANDO_BOTON_BACK_CRUDO = 6
+MANDO_BOTON_START_CRUDO = 7
+MANDO_HAT_CRUDO = 0
+MANDO_EJE_X_CRUDO = 0
+MANDO_EJE_Y_CRUDO = 1
+
+# Algunos mandos (sobre todo DualShock/DualSense en Windows) no exponen el
+# D-pad como hat sino como cuatro botones crudos. Se prueban estos indices
+# despues de mirar los hats.
+MANDO_BOTON_ARRIBA_CRUDO = 11
+MANDO_BOTON_ABAJO_CRUDO = 12
+MANDO_BOTON_IZQUIERDA_CRUDO = 13
+MANDO_BOTON_DERECHA_CRUDO = 14
+MANDO_BOTONES_DIRECCION_CRUDOS = (
+    MANDO_BOTON_ARRIBA_CRUDO,
+    MANDO_BOTON_ABAJO_CRUDO,
+    MANDO_BOTON_IZQUIERDA_CRUDO,
+    MANDO_BOTON_DERECHA_CRUDO,
+)
