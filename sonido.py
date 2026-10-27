@@ -21,6 +21,12 @@ def _ruta(nombre):
 
 SONIDOS = {}
 HABILITADO = False
+SONIDO_ACTIVO = True
+
+
+def set_activo(activo):
+    global SONIDO_ACTIVO
+    SONIDO_ACTIVO = bool(activo)
 
 
 def inicializar():
@@ -87,6 +93,8 @@ def _volumen_para(clave):
 
 def reproducir(clave, volumen=None):
     """Reproduce un sonido una vez. Silencioso si no está disponible."""
+    if not SONIDO_ACTIVO:
+        return None
     if not HABILITADO or pygame.mixer.get_init() is None:
         return None
     sonido = SONIDOS.get(clave)

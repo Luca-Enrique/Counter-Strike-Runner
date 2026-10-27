@@ -123,7 +123,7 @@ def generar_html(ruta_ranking=ranking.RUTA_RANKING, ruta_html=None,
 </html>
 """.format(css=html.escape(ruta_css, quote=True), tabla=tabla)
 
-    ruta_html.write_text(documento, encoding="utf-8")
+    ruta_html.write_text(documento, encoding="utf-8", newline="\n")
     return ruta_html
 
 

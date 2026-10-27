@@ -16,18 +16,27 @@ El personaje vive aparte, en personaje.py, porque tiene fisica y animacion
 propias y no depende de ninguna escena. Los obstaculos viven aparte, en
 obstaculo.py, por la misma razon.
 """
+import json
 import os
 import random
 import webbrowser
+from pathlib import Path
 
 import pygame
+import consola
 import constantes
 import fondo
 import generar_ranking
+import mando
 import obstaculo
 import personaje
 import ranking
 import sonido
+
+# El config vive al lado del juego, igual que ranking.txt. Se guarda como
+# atributo de modulo para que las pruebas puedan apuntarlo a una carpeta
+# temporal sin tocar el archivo real.
+RUTA_CONFIG = Path(__file__).resolve().with_name("config.json")
 
 # --- Funciones puras -----------------------------------------------------
 # No tocan pygame ni guardan estado: son las que se prueban en pruebas.py.
@@ -213,6 +222,10 @@ def cargar_fuentes():
         "puntaje": pygame.font.Font(None, constantes.TAMANO_FUENTE_PUNTAJE),
         "etiqueta": pygame.font.Font(None, constantes.TAMANO_FUENTE_ETIQUETA),
         "slot": pygame.font.Font(None, constantes.TAMANO_FUENTE_SLOT),
+        "consola": pygame.font.SysFont(
+            "consolas,couriernew,dejavusansmono,monospace",
+            constantes.TAMANO_FUENTE_CONSOLA,
+        ),
     }
 
 def dibujar_texto(superficie, cadena, fuente, color, posicion):
@@ -292,16 +305,46 @@ class Escena:
     Cada escena responde a lo mismo, asi que el bucle no necesita saber que
     hay en pantalla. Los metodos vacios se pisan solo con lo que la escena
     necesite.
+
+    Para el mando, cada escena declara que tecla equivale a cada accion. Asi
+    las acciones del mando reutilizan los mismos manejadores que el teclado y
+    no hay que duplicar la logica de cada pantalla.
     """
+
+    MAPEO_MANDO = {
+        "confirmar": pygame.K_RETURN,
+        "secundario": pygame.K_ESCAPE,
+        "inicio": pygame.K_RETURN,
+        "atras": pygame.K_ESCAPE,
+        "izquierda": pygame.K_LEFT,
+        "derecha": pygame.K_RIGHT,
+        "arriba": pygame.K_UP,
+        "abajo": pygame.K_DOWN,
+    }
+
+    # En los menus conviene que mantener el D-pad o el stick repita el
+    # movimiento. En la partida no: arriba/abajo son salto y agachado.
+    REPETIR_DIRECCIONES_MANDO = True
 
     def __init__(self, juego):
         self.juego = juego
+
+    def tecla_de_mando(self, accion):
+        """La tecla que representa esa accion del mando en esta escena."""
+        return self.MAPEO_MANDO.get(accion)
 
     def inicializar(self):
         """Se llama una vez, justo despues de crear la escena."""
 
     def manejar_eventos(self, evento):
         """Reacciona a un evento de pygame."""
+
+    def liberar_controles(self):
+        """Suelta las teclas que pudieran quedar apretadas.
+
+        La consola la llama al abrirse: mientras esta abierta los eventos no
+        llegan a la escena, asi que un KEYUP pendiente se perderia.
+        """
 
     def actualizar(self, delta):
         """Avanza la escena. `delta` son segundos, ya recortados."""
@@ -332,9 +375,17 @@ class EscenaTitulo(Escena):
         if evento.type != pygame.KEYDOWN:
             return
 
-        if evento.key in (pygame.K_SPACE, pygame.K_RETURN):
+        if evento.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_KP_ENTER):
             sonido.reproducir("select")
-            self.juego.cambiar_escena("equipo")
+            siguiente = (
+                "tutorial"
+                if self.juego.corresponde_tutorial()
+                else "equipo"
+            )
+            self.juego.cambiar_escena(siguiente)
+        elif evento.key == pygame.K_t:
+            sonido.reproducir("select")
+            self.juego.cambiar_escena("tutorial")
         elif evento.key == pygame.K_ESCAPE:
             self.juego.salir()
 
@@ -374,7 +425,7 @@ class EscenaTitulo(Escena):
         if _parpadea(self.tiempo):
             dibujar_texto_centrado_en(
                 superficie,
-                "APRETÁ ESPACIO PARA INSERTAR UNA MONEDA",
+                "APRETÁ ESPACIO O A PARA JUGAR",
                 self.juego.fuentes["medio"],
                 constantes.COLOR_ACENTO,
                 centro_x,
@@ -383,7 +434,129 @@ class EscenaTitulo(Escena):
 
         dibujar_texto_centrado_en(
             superficie,
-            "SPACE/ENTER: JUGAR   ·   ESC: SALIR",
+            "SPACE/ENTER/A: JUGAR   ·   T: TUTORIAL   ·   ESC/B: SALIR",
+            self.juego.fuentes["etiqueta"],
+            constantes.COLOR_LETRA_INACTIVA,
+            centro_x,
+            panel.bottom - 28,
+        )
+
+
+class EscenaTutorial(Escena):
+    """Tutorial de seis paginas, antes de elegir equipo.
+
+    Se muestra la primera vez (o cuando se pide con T desde el titulo). Cada
+    SPACE/ENTER pasa de pagina y, al terminar, marca el tutorial como visto en
+    el config para no volver a mostrarlo. ESC lo saltea y hace lo mismo.
+    """
+
+    def __init__(self, juego):
+        super().__init__(juego)
+        self.paginas = [
+            ["TUTORIAL"],
+            ["SALTAR: ESPACIO / ARRIBA / W / CLICK IZQ", "MANDO: A / CROSS"],
+            ["AGACHAR: ABAJO / S / CLICK DER", "MANDO: B / CIRCLE O ABAJO"],
+            ["ESQUIVA TODOS LOS OBSTACULOS", "SUPERA PERSONAS PARA SUMAR KILLS"],
+            [
+                "EN LOS MENUS: D-PAD O STICK PARA MOVERTE",
+                "A: CONFIRMAR   ·   B: VOLVER",
+            ],
+            [
+                "APRETA ESPACIO / ENTER / A PARA AVANZAR",
+                "ESC / B PARA SALTEAR O VOLVER ATRAS",
+            ],
+        ]
+        self.fondo = None
+        self.suelo = None
+        self.tiempo = 0.0
+        self.pagina = 0
+
+    def inicializar(self):
+        self.fondo = fondo.Fondo()
+        self.suelo = fondo.Suelo()
+        self.tiempo = 0.0
+        self.pagina = 0
+
+    def manejar_eventos(self, evento):
+        if evento.type != pygame.KEYDOWN:
+            return
+        if evento.key == pygame.K_ESCAPE:
+            self._terminar()
+            return
+        if evento.key in (pygame.K_SPACE, pygame.K_RETURN, pygame.K_KP_ENTER):
+            self.pagina += 1
+            if self.pagina >= len(self.paginas):
+                self._terminar()
+            else:
+                sonido.reproducir("tick")
+
+    def _terminar(self):
+        try:
+            self.juego.tutorial_visto = True
+            self.juego.guardar_config()
+        except Exception:
+            pass
+        try:
+            sonido.reproducir("select")
+        except Exception:
+            pass
+        self.juego.cambiar_escena("equipo")
+
+    def actualizar(self, delta):
+        self.tiempo += delta
+        if self.fondo is not None:
+            self.fondo.actualizar(delta)
+        if self.suelo is not None:
+            self.suelo.actualizar(delta)
+
+    def dibujar(self, superficie):
+        if self.fondo is not None:
+            self.fondo.dibujar(superficie)
+        if self.suelo is not None:
+            self.suelo.dibujar(superficie)
+
+        panel = pygame.Rect(140, 150, 680, 260)
+        dibujar_panel(superficie, panel)
+        centro_x = panel.centerx
+
+        pagina = (
+            self.paginas[self.pagina]
+            if self.pagina < len(self.paginas)
+            else self.paginas[-1]
+        )
+        lineas = [pagina] if isinstance(pagina, str) else list(pagina)
+
+        y = panel.y + 70
+        for indice, linea in enumerate(lineas):
+            color = (
+                constantes.COLOR_ACENTO
+                if self.pagina == 0 and indice == 0
+                else constantes.COLOR_TEXTO
+            )
+            dibujar_texto_con_sombra(
+                superficie,
+                linea,
+                self.juego.fuentes["medio"],
+                color,
+                centro_x,
+                y,
+            )
+            y += 38
+
+        if self.pagina == 0 and len(lineas) == 1:
+            dibujar_texto_centrado_en(
+                superficie,
+                "UN TUTORIAL SIMPLE PARA EMPEZAR",
+                self.juego.fuentes["etiqueta"],
+                constantes.COLOR_LETRA_INACTIVA,
+                centro_x,
+                panel.y + 150,
+            )
+
+        dibujar_texto_centrado_en(
+            superficie,
+            f"PAGINA {self.pagina + 1}/{len(self.paginas)}   ·   "
+            "SPACE/ENTER/A: SIGUIENTE   ·   ESC/B: SALTEAR",
             self.juego.fuentes["etiqueta"],
             constantes.COLOR_LETRA_INACTIVA,
             centro_x,
@@ -509,11 +682,19 @@ class EscenaEquipo(Escena):
 
         dibujar_texto_centrado_en(
             superficie,
-            "A/D O FLECHAS: CAMBIAR   ·   SPACE/ENTER: CONFIRMAR   ·   ESC: VOLVER",
+            "A/D · FLECHAS · D-PAD: CAMBIAR",
             self.juego.fuentes["etiqueta"],
             constantes.COLOR_LETRA_INACTIVA,
             superficie.get_width() // 2,
-            constantes.ALTO - 36,
+            constantes.ALTO - 58,
+        )
+        dibujar_texto_centrado_en(
+            superficie,
+            "SPACE/ENTER/A: CONFIRMAR   ·   ESC/B: VOLVER",
+            self.juego.fuentes["etiqueta"],
+            constantes.COLOR_LETRA_INACTIVA,
+            superficie.get_width() // 2,
+            constantes.ALTO - 32,
         )
 
     def _dibujar_equipo(self, superficie, equipo, indice):
@@ -595,6 +776,21 @@ class EscenaEquipo(Escena):
 class EscenaJuego(Escena):
     """Escena de partida: fondo por zona, obstaculos, personaje y puntaje."""
 
+    # En la partida el mando se usa como en CS: A/Cross salta, B/Circle
+    # agacha y el D-pad o el stick abajo tambien agachan. Start no hace nada
+    # para no pausar sin querer, y Back/Share vuelve al titulo.
+    MAPEO_MANDO = {
+        "confirmar": pygame.K_SPACE,
+        "secundario": pygame.K_DOWN,
+        "inicio": None,
+        "atras": pygame.K_ESCAPE,
+        "izquierda": None,
+        "derecha": None,
+        "arriba": pygame.K_UP,
+        "abajo": pygame.K_DOWN,
+    }
+    REPETIR_DIRECCIONES_MANDO = False
+
     def __init__(self, juego):
         super().__init__(juego)
         self.puntaje = 0
@@ -637,6 +833,8 @@ class EscenaJuego(Escena):
         self.personaje = personaje.Personaje(
             texturas=personaje.recortar_agachado(texturas)
         )
+        # El personaje consulta los cheats al saltar (jumper).
+        self.personaje.juego = self.juego
         self._agachado_antes = self.personaje.agachado
         self.pasos_timer = 0.0
         self.pasos_indice = 0
@@ -691,6 +889,18 @@ class EscenaJuego(Escena):
             self._boton(evento.button, True)
         elif evento.type == pygame.MOUSEBUTTONUP:
             self._boton(evento.button, False)
+
+    def liberar_controles(self):
+        """Levanta al personaje y olvida el agachado apretado.
+
+        La consola lo llama al abrirse: si el jugador venia agachado, el KEYUP
+        no va a llegar a la escena y se quedaria agachado para siempre.
+        """
+        self.tecla_agacha = False
+        self.raton_agacha = False
+        if self.personaje is not None:
+            self.personaje.agachar(False)
+        self.pasos_timer = 0.0
 
     def _boton(self, boton, presionado):
         """Un boton del raton: el izquierdo salta y el derecho agacha."""
@@ -799,7 +1009,7 @@ class EscenaJuego(Escena):
 
     def _actualizar_fondo(self, delta):
         """Elige el escenario de la zona y mueve el fondo y el suelo."""
-        velocidad = velocidad_obstaculo(self.puntaje)
+        velocidad = self._velocidad_actual()
 
         if self.fondo is not None:
             self.fondo.cambiar_escenario(zona_de_puntaje(self.puntaje))
@@ -810,8 +1020,18 @@ class EscenaJuego(Escena):
             self.suelo.velocidad = velocidad * constantes.FACTOR_PARALLAX_SUELO
             self.suelo.actualizar(delta)
 
-    def _actualizar_obstaculos(self, delta):
+    def _velocidad_actual(self):
+        """La velocidad de los obstaculos, con el cheat speedyg aplicado."""
         velocidad = velocidad_obstaculo(self.puntaje)
+        try:
+            if getattr(self.juego, "cheats", {}).get("speedyg"):
+                velocidad *= 2.0
+        except Exception:
+            pass
+        return velocidad
+
+    def _actualizar_obstaculos(self, delta):
+        velocidad = self._velocidad_actual()
 
         self.tiempo_para_obstaculo -= delta
         while self.tiempo_para_obstaculo <= 0:
@@ -864,6 +1084,11 @@ class EscenaJuego(Escena):
         """True si algun obstaculo se superpone con el personaje."""
         if self.muriendo or self.terminada or self.personaje is None:
             return False
+        try:
+            if getattr(self.juego, "cheats", {}).get("god"):
+                return False
+        except Exception:
+            pass
         for cada_uno in self.obstaculos:
             try:
                 if cada_uno.tipo == "persona" and (getattr(cada_uno, "muerto", False) or getattr(cada_uno, "superado", False)):
@@ -936,6 +1161,19 @@ class EscenaJuego(Escena):
         for cada_uno in self.obstaculos:
             cada_uno.dibujar(superficie)
 
+        try:
+            if getattr(self.juego, "cheats", {}).get("wallhack"):
+                for cada_uno in self.obstaculos:
+                    if getattr(cada_uno, "tipo", None) != "persona":
+                        continue
+                    rect = getattr(cada_uno, "rect", None)
+                    if rect is not None:
+                        pygame.draw.rect(
+                            superficie, constantes.COLOR_ACENTO, rect, 2
+                        )
+        except Exception:
+            pass
+
         if self.personaje is not None:
             if self.muriendo and self.muerto_imagen is not None and self.muerto_rect is not None:
                 superficie.blit(self.muerto_imagen, self.muerto_rect)
@@ -949,6 +1187,18 @@ class EscenaJuego(Escena):
             constantes.COLOR_TEXTO,
             (20, 20),
         )
+
+        mando_activo = getattr(
+            getattr(self.juego, "mando", None), "activo", False
+        )
+        if mando_activo:
+            dibujar_texto(
+                superficie,
+                "MANDO: A SALTAR   ·   B AGACHAR   ·   BACK SALIR",
+                self.juego.fuentes["etiqueta"],
+                constantes.COLOR_LETRA_INACTIVA,
+                (20, constantes.ALTO - 30),
+            )
 
         if self.muriendo and self.muerto_fade > 0:
             try:
@@ -1051,7 +1301,7 @@ class EscenaGameOver(Escena):
         if _parpadea(self.tiempo):
             dibujar_texto_centrado_en(
                 superficie,
-                "PRESIONA ESPACIO PARA INGRESAR TUS INICIALES",
+                "PRESIONA ESPACIO O A PARA INGRESAR TUS INICIALES",
                 self.juego.fuentes["etiqueta"],
                 constantes.COLOR_TEXTO,
                 centro_x,
@@ -1066,6 +1316,9 @@ class EscenaIniciales(Escena):
     parpadeo. Al confirmar se escribe la partida en ranking.txt, se regenera
     ranking.html y se abre en el navegador una sola vez por partida.
     """
+
+    # B/Circle borra una letra, como BACKSPACE en el teclado. A/Cross confirma.
+    MAPEO_MANDO = dict(Escena.MAPEO_MANDO, secundario=pygame.K_BACKSPACE)
 
     def __init__(self, juego):
         super().__init__(juego)
@@ -1285,16 +1538,17 @@ class EscenaIniciales(Escena):
                 error = error[:77] + "..."
             return f"ERROR AL GUARDAR: {error}", constantes.COLOR_ERROR
         if self.guardado:
-            return "RANKING GUARDADO Y ABIERTO. ENTER PARA SEGUIR", (
+            return "RANKING GUARDADO Y ABIERTO. ENTER O A PARA SEGUIR", (
                 constantes.COLOR_ACENTO
             )
-        return "FLECHAS: ELEGIR   ENTER: CONFIRMAR   ESC: SALIR", (
+        return "FLECHAS/D-PAD: ELEGIR   ·   ENTER/A: CONFIRMAR   ·   ESC/B: SALIR", (
             constantes.COLOR_TEXTO
         )
 
 
 ESCENAS = {
     "titulo": EscenaTitulo,
+    "tutorial": EscenaTutorial,
     "equipo": EscenaEquipo,
     "juego": EscenaJuego,
     "gameover": EscenaGameOver,
@@ -1355,7 +1609,76 @@ class Juego:
         self.ruta_ranking_html = ranking.RUTA_RANKING.with_name("ranking.html")
         self.abrir_navegador = webbrowser.open
 
+        # Config: se lee antes de armar la primera escena para que el titulo
+        # sepa si le toca mostrar el tutorial.
+        self.config = self.cargar_config()
+        self.tutorial_habilitado = bool(
+            self.config.get("tutorial_activo", constantes.TUTORIAL_ACTIVO_DEF)
+        )
+        self.sonido_habilitado = bool(
+            self.config.get("sonido_activo", constantes.SONIDO_ACTIVO_DEF)
+        )
+        self.tutorial_visto = bool(self.config.get("tutorial_visto", False))
+        try:
+            sonido.set_activo(self.sonido_habilitado)
+        except Exception:
+            pass
+
+        # Cheats: los prende y apaga la consola (F12).
+        self.cheats = {
+            "wallhack": False,
+            "god": False,
+            "jumper": False,
+            "speedyg": False,
+        }
+
+        # Mando y teclas que tiene apretadas ahora mismo. Se guardan por tecla
+        # para que dos controles del mando que hacen lo mismo (por ejemplo
+        # Circle y D-pad abajo para agacharse) no se suelten entre si.
+        self.mando = mando.Mando()
+        self._claves_de_mando = {}
+
+        self.consola = consola.Consola(self)
         self.cambiar_escena("titulo")
+
+    def corresponde_tutorial(self):
+        """True si el tutorial tiene que aparecer antes de elegir equipo."""
+        return bool(self.tutorial_habilitado and not self.tutorial_visto)
+
+    def cargar_config(self):
+        """Lee config.json. Si falta o esta roto, devuelve los valores por defecto."""
+        try:
+            with open(RUTA_CONFIG, "r", encoding="utf-8") as archivo:
+                datos = json.load(archivo)
+            if isinstance(datos, dict):
+                return datos
+        except (OSError, ValueError):
+            pass
+        return {
+            "tutorial_activo": constantes.TUTORIAL_ACTIVO_DEF,
+            "sonido_activo": constantes.SONIDO_ACTIVO_DEF,
+            "tutorial_visto": False,
+        }
+
+    def guardar_config(self):
+        """Guarda la config de forma atomica: primero el temporal, despues el real."""
+        datos = {
+            "tutorial_activo": bool(self.tutorial_habilitado),
+            "sonido_activo": bool(self.sonido_habilitado),
+            "tutorial_visto": bool(self.tutorial_visto),
+        }
+        self.config = datos
+        ruta_tmp = RUTA_CONFIG.with_name(RUTA_CONFIG.name + ".tmp")
+        try:
+            with open(ruta_tmp, "w", encoding="utf-8", newline="\n") as archivo:
+                json.dump(datos, archivo, ensure_ascii=False, indent=2)
+            os.replace(ruta_tmp, RUTA_CONFIG)
+        except OSError:
+            try:
+                if ruta_tmp.exists():
+                    ruta_tmp.unlink()
+            except OSError:
+                pass
 
     def abrir_ranking(self):
         """Muestra ranking.html en el navegador. Un error no corta el juego."""
@@ -1366,6 +1689,11 @@ class Juego:
 
     def cambiar_escena(self, nombre):
         """Reemplaza la escena activa por la que pide el nombre dado."""
+        # Lo que el mando tenia apretado era para la escena anterior. Asi una
+        # direccion mantenida no mueve sola la pantalla siguiente y un boton
+        # que acaba de confirmar no confirma otra vez.
+        self._claves_de_mando.clear()
+        self.mando.reiniciar_direccion()
         self.escena = ESCENAS[nombre](self)
         self.escena.inicializar()
 
@@ -1377,10 +1705,76 @@ class Juego:
         for evento in pygame.event.get():
             if evento.type == pygame.QUIT:
                 self.salir()
-            elif evento.type == pygame.VIDEORESIZE:
+                continue
+            if evento.type == pygame.VIDEORESIZE:
                 self.redimensionar(evento.size)
-            else:
-                self.escena.manejar_eventos(evento)
+                continue
+
+            # Los eventos del mando no llegan a las escenas: el estado se lee
+            # una vez por fotograma en actualizar(). Solo interesan los de
+            # conexion y desconexion, para abrir o cerrar el dispositivo.
+            if self.mando.manejar_evento(evento):
+                if self.mando.consumir_desconexion():
+                    self._soltar_controles_de_mando()
+                continue
+
+            # La consola se abre y se cierra desde cualquier escena, y mientras
+            # esta abierta se queda con todos los eventos: la partida sigue
+            # corriendo, pero el personaje no recibe las teclas.
+            if (evento.type == pygame.KEYDOWN
+                    and evento.key in (pygame.K_F12, pygame.K_BACKQUOTE)):
+                self._soltar_controles_de_mando()
+                self.consola.alternar()
+                continue
+            if self.consola.abierta:
+                self.consola.manejar_eventos(evento)
+                continue
+
+            self.escena.manejar_eventos(evento)
+
+    def _soltar_controles_de_mando(self):
+        """Suelta lo que el mando tenia apretado, sin tocar el teclado."""
+        for clave, acciones in list(self._claves_de_mando.items()):
+            if acciones:
+                self._enviar_a_escena(pygame.KEYUP, clave)
+        self._claves_de_mando.clear()
+        self.mando.reiniciar_direccion()
+
+    def _enviar_a_escena(self, tipo, clave):
+        """Manda a la escena un evento como si viniera del teclado."""
+        self.escena.manejar_eventos(pygame.event.Event(tipo, key=clave))
+
+    def _aplicar_accion_de_mando(self, accion, presionado, repetido=False):
+        """Traduce una accion del mando a la tecla de la escena actual.
+
+        Se lleva la cuenta de que acciones tienen apretada cada tecla. Si dos
+        controles del mando hacen lo mismo, soltar uno no suelta la tecla
+        mientras el otro siga apretado.
+        """
+        clave = self.escena.tecla_de_mando(accion)
+        if clave is None:
+            return
+
+        acciones = self._claves_de_mando.setdefault(clave, set())
+
+        if repetido:
+            if acciones:
+                self._enviar_a_escena(pygame.KEYDOWN, clave)
+            return
+
+        if presionado:
+            if accion in acciones:
+                return
+            acciones.add(accion)
+            if len(acciones) == 1:
+                self._enviar_a_escena(pygame.KEYDOWN, clave)
+            return
+
+        if accion not in acciones:
+            return
+        acciones.discard(accion)
+        if not acciones:
+            self._enviar_a_escena(pygame.KEYUP, clave)
 
     def redimensionar(self, tamano):
         """Ajusta la ventana al tamano pedido por el sistema.
@@ -1393,11 +1787,31 @@ class Juego:
         self.ventana = pygame.display.set_mode((ancho, alto), pygame.RESIZABLE)
 
     def actualizar(self, delta):
+        self.consola.actualizar(delta)
+
+        # El mando se lee siempre, aunque la consola este abierta, para que su
+        # estado no quede atrasado. Con la consola abierta las acciones se
+        # descartan: la consola se maneja con el teclado.
+        repetir = getattr(
+            self.escena, "REPETIR_DIRECCIONES_MANDO", True
+        )
+        acciones = self.mando.actualizar(delta, repetir)
+        if self.mando.consumir_desconexion():
+            self._soltar_controles_de_mando()
+
+        if not self.consola.abierta:
+            for accion, presionado, repetido in acciones:
+                escena_antes = self.escena
+                self._aplicar_accion_de_mando(accion, presionado, repetido)
+                if self.escena is not escena_antes:
+                    break
+
         self.escena.actualizar(delta)
 
     def dibujar(self):
         self.lienzo.limpiar()
         self.escena.dibujar(self.lienzo.superficie)
+        self.consola.dibujar(self.lienzo.superficie)
         self.lienzo.presentar(self.ventana)
 
     def bucle(self):

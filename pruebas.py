@@ -13,6 +13,7 @@ Se ejecuta con:
 
 Devuelve 0 si todo pasa y 1 si algo falla.
 """
+import json
 import os
 import tempfile
 from pathlib import Path
@@ -24,13 +25,16 @@ os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 
 import pygame
 
+import consola
 import constantes
 import fondo
 import generar_ranking
 import juego
+import mando
 import obstaculo
 import personaje
 import ranking
+import sonido
 
 
 # Ventanas raras, para comprobar que la imagen entra siempre entera.
@@ -101,6 +105,28 @@ def juego_stub(tamano_ventana=None):
                 tamano_ventana or (constantes.ANCHO, constantes.ALTO)
             )
 
+            # Estado de config y cheats, como en el Juego de verdad.
+            self.cheats = {
+                "wallhack": False,
+                "god": False,
+                "jumper": False,
+                "speedyg": False,
+            }
+            self.tutorial_habilitado = True
+            # Las pruebas viejas esperan que el titulo lleve directo a la
+            # eleccion de equipo; las del tutorial lo ponen en False.
+            self.tutorial_visto = True
+            self.sonido_habilitado = True
+            self.config = {}
+            self.config_guardado = 0
+            self.salio = False
+            self.consola = None
+
+            # Sin mando real: el Juego de verdad lo crea en __init__, pero el
+            # stub solo necesita uno inactivo para que el bucle no falle.
+            self.mando = mando.Mando(autodetectar=False)
+            self._claves_de_mando = {}
+
         def _anotar_apertura(self, url):
             self.navegador_abierto = url
 
@@ -110,11 +136,35 @@ def juego_stub(tamano_ventana=None):
             except OSError:
                 pass
 
+        def corresponde_tutorial(self):
+            return bool(self.tutorial_habilitado and not self.tutorial_visto)
+
+        def guardar_config(self):
+            self.config_guardado += 1
+            self.config = {
+                "tutorial_activo": bool(self.tutorial_habilitado),
+                "sonido_activo": bool(self.sonido_habilitado),
+                "tutorial_visto": bool(self.tutorial_visto),
+            }
+
         def cambiar_escena(self, nombre):
             self.cambio_de_escena = nombre
 
         def salir(self):
-            pass
+            self.salio = True
+
+        # El bucle real usa estos tres metodos; el stub se los presta de Juego
+        # para probar el reparto del mando sin abrir una ventana.
+        def _aplicar_accion_de_mando(self, accion, presionado, repetido=False):
+            return juego.Juego._aplicar_accion_de_mando(
+                self, accion, presionado, repetido
+            )
+
+        def _enviar_a_escena(self, tipo, clave):
+            return juego.Juego._enviar_a_escena(self, tipo, clave)
+
+        def _soltar_controles_de_mando(self):
+            return juego.Juego._soltar_controles_de_mando(self)
 
     return JuegoStub()
 
@@ -1409,6 +1459,746 @@ def _iniciales_invalidas():
     return True
 
 
+# --- Ayudantes para el tutorial ------------------------------------------
+
+def _escena_titulo_con(tutorial_visto=True, tutorial_habilitado=True):
+    """Una EscenaTitulo con el estado de tutorial que pida la prueba."""
+    stub = juego_stub()
+    stub.tutorial_visto = tutorial_visto
+    stub.tutorial_habilitado = tutorial_habilitado
+    escena = juego.EscenaTitulo(stub)
+    escena.inicializar()
+    return escena
+
+
+def _escena_tutorial():
+    """Una EscenaTutorial apuntada a un juego stub sin config guardada."""
+    stub = juego_stub()
+    stub.tutorial_visto = False
+    escena = juego.EscenaTutorial(stub)
+    escena.inicializar()
+    return escena
+
+
+def _titulo_muestra_el_tutorial_la_primera_vez():
+    escena = _escena_titulo_con(tutorial_visto=False)
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_SPACE))
+    return escena.juego.cambio_de_escena == "tutorial"
+
+
+def _titulo_no_repite_el_tutorial():
+    escena = _escena_titulo_con(tutorial_visto=True)
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_RETURN))
+    return escena.juego.cambio_de_escena == "equipo"
+
+
+def _tutorial_desactivado_no_aparece():
+    escena = _escena_titulo_con(
+        tutorial_visto=False, tutorial_habilitado=False
+    )
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_SPACE))
+    return escena.juego.cambio_de_escena == "equipo"
+
+
+def _t_siempre_abre_el_tutorial():
+    escena = _escena_titulo_con(tutorial_visto=True)
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_t))
+    return escena.juego.cambio_de_escena == "tutorial"
+
+
+def _tutorial_se_recorre_y_marca_visto():
+    escena = _escena_tutorial()
+    for _ in range(len(escena.paginas)):
+        escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_SPACE))
+    return (
+        escena.juego.cambio_de_escena == "equipo"
+        and escena.juego.tutorial_visto
+        and escena.juego.config_guardado == 1
+        and escena.juego.config["tutorial_visto"]
+    )
+
+
+def _tutorial_esc_lo_saltea_y_marca_visto():
+    escena = _escena_tutorial()
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_ESCAPE))
+    return (
+        escena.juego.cambio_de_escena == "equipo"
+        and escena.juego.tutorial_visto
+        and escena.juego.config_guardado == 1
+    )
+
+
+def _tutorial_dibuja_todas_las_paginas():
+    escena = _escena_tutorial()
+    lienzo = juego.Lienzo()
+    for pagina in range(len(escena.paginas)):
+        escena.pagina = pagina
+        escena.dibujar(lienzo.superficie)
+    return True
+
+
+# --- Ayudantes para config ------------------------------------------------
+
+CONFIG_POR_DEFECTO = {
+    "tutorial_activo": constantes.TUTORIAL_ACTIVO_DEF,
+    "sonido_activo": constantes.SONIDO_ACTIVO_DEF,
+    "tutorial_visto": False,
+}
+
+
+def _config_por_defecto_si_falta(tmp):
+    falso = juego.Juego.__new__(juego.Juego)
+    original = juego.RUTA_CONFIG
+    juego.RUTA_CONFIG = tmp / "config.json"
+    try:
+        return falso.cargar_config() == CONFIG_POR_DEFECTO
+    finally:
+        juego.RUTA_CONFIG = original
+
+
+def _config_rota_usa_los_valores_por_defecto(tmp):
+    (tmp / "config.json").write_text("{esto no es json", encoding="utf-8")
+    return _config_por_defecto_si_falta(tmp)
+
+
+def _config_ida_y_vuelta(tmp):
+    falso = juego.Juego.__new__(juego.Juego)
+    falso.tutorial_habilitado = False
+    falso.sonido_habilitado = False
+    falso.tutorial_visto = True
+    original = juego.RUTA_CONFIG
+    juego.RUTA_CONFIG = tmp / "config.json"
+    try:
+        falso.guardar_config()
+        ruta = juego.RUTA_CONFIG
+        escrito = json.loads(ruta.read_text(encoding="utf-8"))
+        temporal = ruta.with_name(ruta.name + ".tmp")
+
+        falso.tutorial_habilitado = True
+        falso.sonido_habilitado = True
+        falso.tutorial_visto = False
+        leido = falso.cargar_config()
+        return (
+            escrito == {
+                "tutorial_activo": False,
+                "sonido_activo": False,
+                "tutorial_visto": True,
+            }
+            and not temporal.exists()
+            and leido == escrito
+        )
+    finally:
+        juego.RUTA_CONFIG = original
+
+
+# --- Ayudantes para los cheats --------------------------------------------
+
+def _god_evita_el_choque():
+    escena = escena_de_juego()
+    _soltar_sobre_el_jugador(escena, "caja")
+    choca = escena._choca()
+    escena.juego.cheats["god"] = True
+    return choca and not escena._choca()
+
+
+def _jumper_duplica_el_salto():
+    stub = juego_stub()
+    normal = personaje.Personaje()
+    normal.juego = stub
+    normal.saltar()
+
+    stub.cheats["jumper"] = True
+    tramposo = personaje.Personaje()
+    tramposo.juego = stub
+    tramposo.saltar()
+
+    return (
+        casi_igual(normal.velocidad_inicial, constantes.VELOCIDAD_SALTO)
+        and casi_igual(
+            tramposo.velocidad_inicial, constantes.VELOCIDAD_SALTO * 2
+        )
+    )
+
+
+def _speedyg_duplica_la_velocidad():
+    escena = escena_de_juego()
+    escena.puntaje = 750
+    normal = escena._velocidad_actual()
+    escena.juego.cheats["speedyg"] = True
+    return casi_igual(escena._velocidad_actual(), normal * 2)
+
+
+def _wallhack_marca_las_personas():
+    escena = escena_de_juego()
+    persona = _soltar_sobre_el_jugador(escena, "persona")
+    lienzo = juego.Lienzo()
+    lienzo.superficie.fill(constantes.COLOR_FONDO)
+
+    escena.juego.cheats["wallhack"] = False
+    escena.dibujar(lienzo.superficie)
+    sin_marca = tuple(
+        lienzo.superficie.get_at((persona.rect.left + 1, persona.rect.top))
+    )[:3]
+
+    escena.juego.cheats["wallhack"] = True
+    escena.dibujar(lienzo.superficie)
+    con_marca = tuple(
+        lienzo.superficie.get_at((persona.rect.left + 1, persona.rect.top))
+    )[:3]
+
+    return (
+        sin_marca != constantes.COLOR_ACENTO
+        and con_marca == constantes.COLOR_ACENTO
+    )
+
+
+def _el_muerto_se_escala_al_personaje():
+    for equipo in ("CT", "T"):
+        imagen = personaje.cargar_muerto(equipo)
+        if imagen is None:
+            return False
+        if imagen.get_height() != constantes.ALTO_PERSONAJE:
+            return False
+    return True
+
+
+# --- Ayudantes para la consola --------------------------------------------
+
+def _consola_de_prueba():
+    """Un juego stub con su propia consola."""
+    stub = juego_stub()
+    pantalla = consola.Consola(stub)
+    return stub, pantalla
+
+
+def _consola_help_lista():
+    stub, _ = _consola_de_prueba()
+    texto = consola.ejecutar("help", stub)
+    return all(
+        nombre in texto
+        for nombre in ("god", "wallhack", "restart", "spawn", "quit")
+    )
+
+
+def _consola_help_detalla_un_comando():
+    stub, _ = _consola_de_prueba()
+    texto = consola.ejecutar("help GOD", stub)
+    return "uso:" in texto and "inmortal" in texto
+
+
+def _consola_comando_desconocido():
+    stub, _ = _consola_de_prueba()
+    texto = consola.ejecutar("matar", stub)
+    return texto.startswith("Comando desconocido") and not any(
+        stub.cheats.values()
+    )
+
+
+def _consola_ignora_mayusculas_y_espacios():
+    stub, _ = _consola_de_prueba()
+    texto = consola.ejecutar("  GoD  ", stub)
+    return texto == "GOD: ON" and stub.cheats["god"]
+
+
+def _consola_toggles():
+    for comando, clave in (
+        ("god", "god"),
+        ("wallhack", "wallhack"),
+        ("jumper", "jumper"),
+        ("speedyg", "speedyg"),
+    ):
+        stub, _ = _consola_de_prueba()
+        encendido = consola.ejecutar(comando, stub)
+        if not (stub.cheats[clave] and encendido.endswith("ON")):
+            return False
+        apagado = consola.ejecutar(comando, stub)
+        if stub.cheats[clave] or not apagado.endswith("OFF"):
+            return False
+    return True
+
+
+def _consola_sonido_persiste():
+    stub, _ = _consola_de_prueba()
+    anterior = sonido.SONIDO_ACTIVO
+    try:
+        texto = consola.ejecutar("sonido off", stub)
+        return (
+            texto == "Sonido: OFF"
+            and stub.sonido_habilitado is False
+            and stub.config_guardado == 1
+            and stub.config["sonido_activo"] is False
+            and sonido.SONIDO_ACTIVO is False
+        )
+    finally:
+        sonido.set_activo(anterior)
+
+
+def _consola_tutorial_auto_persiste():
+    stub, _ = _consola_de_prueba()
+    texto = consola.ejecutar("tutorial_auto off", stub)
+    return (
+        texto == "Tutorial automatico: OFF"
+        and stub.tutorial_habilitado is False
+        and stub.config_guardado == 1
+        and stub.config["tutorial_activo"] is False
+    )
+
+
+def _consola_cambia_de_escena():
+    stub, _ = _consola_de_prueba()
+    reinicio = consola.ejecutar("restart", stub)
+    ir_al_menu = consola.ejecutar("menu", stub)
+    return (
+        reinicio == "Escena: juego"
+        and ir_al_menu == "Escena: titulo"
+        and stub.cambio_de_escena == "titulo"
+    )
+
+
+def _consola_spawn_solo_en_partida():
+    stub, _ = _consola_de_prueba()
+    fuera = consola.ejecutar("spawn persona", stub)
+
+    escena = escena_de_juego()
+    escena.juego.escena = escena
+    antes = len(escena.obstaculos)
+    dentro = consola.ejecutar("spawn persona", escena.juego)
+    malo = consola.ejecutar("spawn nave", escena.juego)
+
+    return (
+        fuera.startswith("Error")
+        and len(escena.obstaculos) == antes + 1
+        and escena.obstaculos[-1].tipo == "persona"
+        and dentro.startswith("Obstaculo generado")
+        and malo.startswith("Error")
+    )
+
+
+def _consola_abre_el_ranking():
+    stub, _ = _consola_de_prueba()
+    texto = consola.ejecutar("rank", stub)
+    return texto.startswith("Ranking abierto") and stub.navegador_abierto
+
+
+def _consola_limpia_la_salida():
+    stub, pantalla = _consola_de_prueba()
+    pantalla.escribir("algo")
+    texto = consola.ejecutar("clear", stub)
+    return texto == "" and pantalla.salida == []
+
+
+def _consola_cierra_el_juego():
+    stub, _ = _consola_de_prueba()
+    texto = consola.ejecutar("quit", stub)
+    return texto == "Saliendo..." and stub.salio
+
+
+def _consola_historial():
+    _, pantalla = _consola_de_prueba()
+    pantalla.abrir()
+    pantalla.texto = "god"
+    pantalla.ejecutar_texto()
+    pantalla.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_UP))
+    arriba = pantalla.texto == "god"
+    pantalla.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_DOWN))
+    return arriba and pantalla.texto == ""
+
+
+def _consola_tab_completa():
+    _, pantalla = _consola_de_prueba()
+    pantalla.abrir()
+    pantalla.texto = "go"
+    pantalla.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_TAB))
+    return pantalla.texto == "god "
+
+
+def _consola_enter_ejecuta():
+    stub, pantalla = _consola_de_prueba()
+    pantalla.abrir()
+    pantalla.texto = "god"
+    pantalla.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_RETURN))
+    lineas = [texto for texto, _ in pantalla.salida]
+    return (
+        stub.cheats["god"]
+        and pantalla.texto == ""
+        and "> god" in lineas
+        and any("GOD: ON" in linea for linea in lineas)
+    )
+
+
+def _consola_escribe_unicode():
+    _, pantalla = _consola_de_prueba()
+    pantalla.abrir()
+    pantalla.manejar_eventos(
+        pygame.event.Event(pygame.KEYDOWN, key=ord("ñ"), unicode="ñ")
+    )
+    return pantalla.texto == "ñ"
+
+
+def _consola_esc_cierra():
+    _, pantalla = _consola_de_prueba()
+    pantalla.abrir()
+    pantalla.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_ESCAPE))
+    return not pantalla.abierta and pantalla.texto == ""
+
+
+def _consola_alterna():
+    _, pantalla = _consola_de_prueba()
+    pantalla.alternar()
+    abierta = pantalla.abierta
+    pantalla.alternar()
+    return abierta and not pantalla.abierta
+
+
+def _consola_abrir_libera_controles():
+    escena = escena_de_juego()
+    escena.juego.escena = escena
+    escena.manejar_eventos(tecla(pygame.KEYDOWN, pygame.K_DOWN))
+    agachado = escena.personaje.agachado
+    pantalla = consola.Consola(escena.juego)
+    pantalla.abrir()
+    return (
+        agachado
+        and not escena.personaje.agachado
+        and not escena.tecla_agacha
+        and not escena.raton_agacha
+    )
+
+
+def _consola_dibuja_el_panel():
+    _, pantalla = _consola_de_prueba()
+    pantalla.abrir()
+    pantalla.escribir("hola")
+    superficie = pygame.Surface((constantes.ANCHO, constantes.ALTO))
+    pantalla.dibujar(superficie)
+    return True
+
+
+class _EscenaFalsa:
+    """Escena mínima para probar el reparto de eventos del bucle."""
+
+    def __init__(self):
+        self.eventos = []
+        self.actualizaciones = 0
+
+    def manejar_eventos(self, evento):
+        self.eventos.append(evento)
+
+    def liberar_controles(self):
+        pass
+
+    def actualizar(self, delta):
+        self.actualizaciones += 1
+
+    def dibujar(self, superficie):
+        pass
+
+
+def _juego_para_el_bucle():
+    stub = juego_stub()
+    stub.escena = _EscenaFalsa()
+    stub.consola = consola.Consola(stub)
+    return stub
+
+
+def _f12_no_llega_a_la_escena():
+    stub = _juego_para_el_bucle()
+    pygame.event.clear()
+    pygame.event.post(
+        pygame.event.Event(pygame.KEYDOWN, key=pygame.K_F12)
+    )
+    juego.Juego.manejar_eventos(stub)
+    abrio = stub.consola.abierta
+
+    pygame.event.post(
+        pygame.event.Event(pygame.KEYDOWN, key=ord("a"), unicode="a")
+    )
+    juego.Juego.manejar_eventos(stub)
+    escribio = stub.consola.texto == "a"
+
+    pygame.event.post(
+        pygame.event.Event(pygame.KEYDOWN, key=pygame.K_F12)
+    )
+    juego.Juego.manejar_eventos(stub)
+
+    return (
+        abrio
+        and escribio
+        and not stub.consola.abierta
+        and not stub.escena.eventos
+    )
+
+
+def _la_partida_no_se_pausa():
+    stub = _juego_para_el_bucle()
+    stub.consola.abrir()
+    juego.Juego.actualizar(stub, DELTA)
+    return stub.escena.actualizaciones == 1
+
+
+# --- Mando ---------------------------------------------------------------
+
+class ControladorFalso:
+    """Un controlador normalizado de mentira, sin SDL ni hardware."""
+
+    def __init__(self):
+        self.botones = set()
+        self.ejes = {}
+        self.conectado = True
+
+    def get_button(self, boton):
+        return boton in self.botones
+
+    def get_axis(self, eje):
+        return self.ejes.get(eje, 0.0)
+
+    def attached(self):
+        return self.conectado
+
+    def quit(self):
+        self.conectado = False
+
+
+def mando_de_prueba():
+    """Un Mando con un controlador falso, ya enganchado."""
+    controlador = ControladorFalso()
+    return mando.Mando(controlador=controlador), controlador
+
+
+def _juego_con_mando(escena):
+    """Engancha un mando falso a la escena y devuelve el juego y el controlador."""
+    stub = escena.juego
+    stub.consola = consola.Consola(stub)
+    stub.mando, controlador = mando_de_prueba()
+    stub.escena = escena
+    return stub, controlador
+
+
+def _mando_mapea_botones():
+    dispositivo, controlador = mando_de_prueba()
+    controlador.botones.add(mando.BOTON_A)
+    apretado = dispositivo.actualizar(DELTA)
+    controlador.botones.discard(mando.BOTON_A)
+    soltado = dispositivo.actualizar(DELTA)
+    return (
+        apretado == [("confirmar", True, False)]
+        and soltado == [("confirmar", False, False)]
+    )
+
+
+def _mando_mapea_direcciones():
+    dispositivo, controlador = mando_de_prueba()
+    controlador.botones.add(mando.BOTON_DERECHA)
+    return dispositivo.actualizar(DELTA) == [("derecha", True, False)]
+
+
+def _mando_usa_el_stick_con_zona_muerta():
+    return (
+        mando.direccion_de_ejes(0.2, 0.1) is None
+        and mando.direccion_de_ejes(0.9, 0.1) == "derecha"
+        and mando.direccion_de_ejes(-0.1, -0.9) == "arriba"
+        and mando.direccion_de_ejes(0.1, 0.9) == "abajo"
+    )
+
+
+def _mando_lee_el_hat():
+    return (
+        mando.direccion_de_hat((0, 0)) is None
+        and mando.direccion_de_hat((0, 1)) == "arriba"
+        and mando.direccion_de_hat((0, -1)) == "abajo"
+        and mando.direccion_de_hat((-1, 0)) == "izquierda"
+        and mando.direccion_de_hat((1, 0)) == "derecha"
+    )
+
+
+def _mando_repite_direcciones():
+    dispositivo, controlador = mando_de_prueba()
+    controlador.botones.add(mando.BOTON_DERECHA)
+    primera = dispositivo.actualizar(DELTA) == [("derecha", True, False)]
+    antes = dispositivo.actualizar(
+        constantes.MANDO_RETRASO_REPETICION / 2
+    ) == []
+    repite = dispositivo.actualizar(
+        constantes.MANDO_RETRASO_REPETICION
+    ) == [("derecha", True, True)]
+    return primera and antes and repite
+
+
+def _mando_no_repite_en_la_partida():
+    dispositivo, controlador = mando_de_prueba()
+    controlador.botones.add(mando.BOTON_ABAJO)
+    primera = dispositivo.actualizar(DELTA) == [("abajo", True, False)]
+    segunda = dispositivo.actualizar(1.0, repetir_direcciones=False) == []
+    return primera and segunda
+
+
+def _mando_espera_centro_al_reiniciar():
+    dispositivo, controlador = mando_de_prueba()
+    controlador.botones.add(mando.BOTON_DERECHA)
+    dispositivo.actualizar(DELTA)
+    dispositivo.reiniciar_direccion()
+    # Sigue apretada: no tiene que mover la escena nueva.
+    quieta = dispositivo.actualizar(DELTA) == []
+    controlador.botones.discard(mando.BOTON_DERECHA)
+    centro = dispositivo.actualizar(DELTA) == []
+    controlador.botones.add(mando.BOTON_IZQUIERDA)
+    nueva = dispositivo.actualizar(DELTA) == [("izquierda", True, False)]
+    return quieta and centro and nueva
+
+
+def _mapeo_de_mando_por_escena():
+    partida = escena_de_juego()
+    equipo = escena_de_equipo()
+    iniciales = juego.EscenaIniciales(juego_stub())
+    iniciales.inicializar()
+    return (
+        partida.tecla_de_mando("confirmar") == pygame.K_SPACE
+        and partida.tecla_de_mando("secundario") == pygame.K_DOWN
+        and partida.tecla_de_mando("inicio") is None
+        and partida.tecla_de_mando("atras") == pygame.K_ESCAPE
+        and equipo.tecla_de_mando("confirmar") == pygame.K_RETURN
+        and equipo.tecla_de_mando("secundario") == pygame.K_ESCAPE
+        and iniciales.tecla_de_mando("secundario") == pygame.K_BACKSPACE
+    )
+
+
+def _mando_confirma_en_el_titulo():
+    stub = juego_stub()
+    escena = juego.EscenaTitulo(stub)
+    escena.inicializar()
+    stub, controlador = _juego_con_mando(escena)
+    controlador.botones.add(mando.BOTON_A)
+    juego.Juego.actualizar(stub, DELTA)
+    return stub.cambio_de_escena == "equipo"
+
+
+def _mando_navega_la_eleccion():
+    escena = escena_de_equipo()
+    stub, controlador = _juego_con_mando(escena)
+    controlador.botones.add(mando.BOTON_DERECHA)
+    juego.Juego.actualizar(stub, DELTA)
+    derecha = escena.resaltado == "T"
+
+    controlador.botones.discard(mando.BOTON_DERECHA)
+    controlador.botones.add(mando.BOTON_A)
+    juego.Juego.actualizar(stub, DELTA)
+    return derecha and stub.equipo == "T" and stub.cambio_de_escena == "juego"
+
+
+def _mando_salta_en_la_partida():
+    escena = escena_de_juego()
+    stub, controlador = _juego_con_mando(escena)
+    controlador.botones.add(mando.BOTON_A)
+    juego.Juego.actualizar(stub, DELTA)
+    return not escena.personaje.en_suelo
+
+
+def _mando_agacha_y_levanta():
+    escena = escena_de_juego()
+    stub, controlador = _juego_con_mando(escena)
+    controlador.botones.add(mando.BOTON_B)
+    juego.Juego.actualizar(stub, DELTA)
+    agachado = escena.personaje.agachado and escena.tecla_agacha
+
+    controlador.botones.discard(mando.BOTON_B)
+    juego.Juego.actualizar(stub, DELTA)
+    return agachado and not escena.personaje.agachado and not escena.tecla_agacha
+
+
+def _mando_dos_agachadores_no_se_pisan():
+    escena = escena_de_juego()
+    stub, controlador = _juego_con_mando(escena)
+
+    controlador.botones.add(mando.BOTON_B)
+    controlador.botones.add(mando.BOTON_ABAJO)
+    juego.Juego.actualizar(stub, DELTA)
+    los_dos = escena.personaje.agachado
+
+    # Soltar Circle no levanta al personaje si el D-pad sigue abajo.
+    controlador.botones.discard(mando.BOTON_B)
+    juego.Juego.actualizar(stub, DELTA)
+    sigue_agachado = escena.personaje.agachado
+
+    controlador.botones.discard(mando.BOTON_ABAJO)
+    juego.Juego.actualizar(stub, DELTA)
+    return los_dos and sigue_agachado and not escena.personaje.agachado
+
+
+def _mando_en_las_iniciales():
+    stub = juego_stub()
+    escena = juego.EscenaIniciales(stub)
+    escena.inicializar()
+    escena.slot = 2
+    stub, controlador = _juego_con_mando(escena)
+
+    controlador.botones.add(mando.BOTON_B)
+    juego.Juego.actualizar(stub, DELTA)
+    borro = escena.slot == 1
+
+    controlador.botones.discard(mando.BOTON_B)
+    controlador.botones.add(mando.BOTON_BACK)
+    juego.Juego.actualizar(stub, DELTA)
+    return borro and stub.cambio_de_escena == "titulo"
+
+
+def _mando_no_interfiere_con_la_consola():
+    stub = juego_stub()
+    escena = juego.EscenaTitulo(stub)
+    escena.inicializar()
+    stub, controlador = _juego_con_mando(escena)
+    stub.consola.abrir()
+
+    controlador.botones.add(mando.BOTON_A)
+    juego.Juego.actualizar(stub, DELTA)
+    return stub.cambio_de_escena is None
+
+
+def _mando_desconectado_libera_controles():
+    escena = escena_de_juego()
+    stub, controlador = _juego_con_mando(escena)
+
+    controlador.botones.add(mando.BOTON_B)
+    juego.Juego.actualizar(stub, DELTA)
+    agachado = escena.personaje.agachado
+
+    controlador.conectado = False
+    juego.Juego.actualizar(stub, DELTA)
+    return (
+        agachado
+        and not escena.personaje.agachado
+        and not escena.tecla_agacha
+        and not stub.mando.activo
+    )
+
+
+def _mando_sin_mando_no_rompe():
+    dispositivo = mando.Mando(autodetectar=False)
+    return dispositivo.actualizar(DELTA) == [] and not dispositivo.activo
+
+
+def _mando_maneja_eventos_de_conexion():
+    dispositivo = mando.Mando(autodetectar=False)
+    removido = pygame.event.Event(pygame.JOYDEVICEREMOVED, instance_id=0)
+    agregado = pygame.event.Event(pygame.JOYDEVICEADDED, device_index=0)
+    return (
+        dispositivo.manejar_evento(removido)
+        and dispositivo.manejar_evento(agregado)
+        and not dispositivo.activo
+    )
+
+
+def _teclado_sigue_funcionando_con_mando():
+    stub = juego_stub()
+    escena = juego.EscenaTitulo(stub)
+    escena.inicializar()
+    stub, _ = _juego_con_mando(escena)
+
+    pygame.event.clear()
+    pygame.event.post(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_SPACE))
+    juego.Juego.manejar_eventos(stub)
+    return stub.cambio_de_escena == "equipo"
+
+
 def casos():
     """Arma la lista de (descripcion, condicion) a verificar."""
     # La altura del salto sale de la formula de docs/ESPECIFICACION.md:
@@ -1661,6 +2451,64 @@ def casos():
         ("la eleccion dibuja el mismo fondo que el titulo",
          _eleccion_dibuja_el_fondo()),
 
+        # --- El mando
+        ("el mando traduce los botones a acciones y las suelta al soltar",
+         _mando_mapea_botones),
+
+        ("el D-pad se traduce a una direccion",
+         _mando_mapea_direcciones),
+
+        ("el stick usa zona muerta y elige un solo eje",
+         _mando_usa_el_stick_con_zona_muerta),
+
+        ("el D-pad expuesto como hat se traduce igual",
+         _mando_lee_el_hat),
+
+        ("mantener una direccion en un menu la repite",
+         _mando_repite_direcciones),
+
+        ("en la partida las direcciones no se repiten",
+         _mando_no_repite_en_la_partida),
+
+        ("al cambiar de escena hay que centrar el stick antes de mover otra vez",
+         _mando_espera_centro_al_reiniciar),
+
+        ("cada escena mapea las acciones del mando a sus teclas",
+         _mapeo_de_mando_por_escena),
+
+        ("A/Cross confirma en el titulo",
+         _mando_confirma_en_el_titulo),
+
+        ("el D-pad elige equipo y A/Cross confirma",
+         _mando_navega_la_eleccion),
+
+        ("A/Cross salta en la partida",
+         _mando_salta_en_la_partida),
+
+        ("B/Circle agacha mientras se mantiene y levanta al soltar",
+         _mando_agacha_y_levanta),
+
+        ("Circle y D-pad abajo agachan sin pisarse al soltar uno",
+         _mando_dos_agachadores_no_se_pisan),
+
+        ("B/Circle borra en las iniciales y Back/Share sale",
+         _mando_en_las_iniciales),
+
+        ("con la consola abierta el mando no mueve la escena",
+         _mando_no_interfiere_con_la_consola),
+
+        ("desconectar el mando suelta el agachado",
+         _mando_desconectado_libera_controles),
+
+        ("sin mando conectado el juego sigue funcionando",
+         _mando_sin_mando_no_rompe),
+
+        ("los eventos de conexion y desconexion no rompen sin mando",
+         _mando_maneja_eventos_de_conexion),
+
+        ("el teclado sigue funcionando con el mando enganchado",
+         _teclado_sigue_funcionando_con_mando),
+
         # --- El fondo del titulo
         ("el fondo del titulo avanza con el tiempo",
          _fondo_se_desplaza()),
@@ -1804,6 +2652,122 @@ def casos():
 
         ("lo que no son 3 letras se rechaza",
          _iniciales_invalidas),
+
+        # --- Tutorial, config y cheats
+        ("la pantalla de tutorial esta registrada",
+         "tutorial" in juego.ESCENAS),
+
+        ("en la primera partida el titulo muestra el tutorial",
+         _titulo_muestra_el_tutorial_la_primera_vez),
+
+        ("una vez visto, el titulo va directo a la eleccion de equipo",
+         _titulo_no_repite_el_tutorial),
+
+        ("con el tutorial desactivado no aparece aunque no se haya visto",
+         _tutorial_desactivado_no_aparece),
+
+        ("T en el titulo vuelve a abrir el tutorial",
+         _t_siempre_abre_el_tutorial),
+
+        ("recorrer el tutorial lo marca como visto y guarda la config",
+         _tutorial_se_recorre_y_marca_visto),
+
+        ("ESC saltea el tutorial, lo marca como visto y guarda la config",
+         _tutorial_esc_lo_saltea_y_marca_visto),
+
+        ("el tutorial dibuja todas sus paginas sin fallar",
+         _tutorial_dibuja_todas_las_paginas),
+
+        ("sin config.json se usan los valores por defecto",
+         con_carpeta_temporal(_config_por_defecto_si_falta)),
+
+        ("un config.json roto no rompe el juego",
+         con_carpeta_temporal(_config_rota_usa_los_valores_por_defecto)),
+
+        ("la config se guarda y se vuelve a leer igual, sin dejar el temporal",
+         con_carpeta_temporal(_config_ida_y_vuelta)),
+
+        ("god evita el choque con un obstaculo",
+         _god_evita_el_choque),
+
+        ("jumper duplica la velocidad inicial del salto",
+         _jumper_duplica_el_salto),
+
+        ("speedyg duplica la velocidad de los obstaculos",
+         _speedyg_duplica_la_velocidad),
+
+        ("wallhack dibuja el borde de las personas",
+         _wallhack_marca_las_personas),
+
+        ("el sprite de muerto se escala al alto del personaje",
+         _el_muerto_se_escala_al_personaje),
+
+        # --- La consola de comandos
+        ("help lista todos los comandos",
+         _consola_help_lista),
+
+        ("help <comando> muestra el uso y los alias",
+         _consola_help_detalla_un_comando),
+
+        ("un comando desconocido avisa y no cambia nada",
+         _consola_comando_desconocido),
+
+        ("la consola ignora mayusculas y espacios sobrantes",
+         _consola_ignora_mayusculas_y_espacios),
+
+        ("cada cheat se prende y se apaga desde la consola",
+         _consola_toggles),
+
+        ("sonido on|off cambia el audio y lo guarda en la config",
+         _consola_sonido_persiste),
+
+        ("tutorial_auto on|off cambia el tutorial automatico y lo guarda",
+         _consola_tutorial_auto_persiste),
+
+        ("restart y menu cambian de escena",
+         _consola_cambia_de_escena),
+
+        ("spawn solo funciona durante la partida y valida el tipo",
+         _consola_spawn_solo_en_partida),
+
+        ("rank abre el HTML del ranking",
+         _consola_abre_el_ranking),
+
+        ("clear limpia la salida de la consola",
+         _consola_limpia_la_salida),
+
+        ("quit cierra el juego",
+         _consola_cierra_el_juego),
+
+        ("ARRIBA recupera el ultimo comando y ABAJO vuelve a vaciar",
+         _consola_historial),
+
+        ("TAB completa el nombre del comando",
+         _consola_tab_completa),
+
+        ("ENTER ejecuta el comando escrito",
+         _consola_enter_ejecuta),
+
+        ("la consola acepta caracteres unicode",
+         _consola_escribe_unicode),
+
+        ("ESC cierra la consola y limpia la entrada",
+         _consola_esc_cierra),
+
+        ("la consola se abre y se cierra con alternar",
+         _consola_alterna),
+
+        ("abrir la consola suelta el agachado apretado",
+         _consola_abrir_libera_controles),
+
+        ("la consola dibuja su panel sin fallar",
+         _consola_dibuja_el_panel),
+
+        ("F12 abre y cierra la consola sin que el evento llegue a la escena",
+         _f12_no_llega_a_la_escena),
+
+        ("con la consola abierta la partida sigue actualizandose",
+         _la_partida_no_se_pausa),
 
         # --- Generacion del HTML
         ("el HTML tiene las columnas, el top 10, el CSS y el orden correcto",
