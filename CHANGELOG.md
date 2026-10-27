@@ -2,6 +2,89 @@
 
 Los cambios del proyecto, de la versión más reciente a la más antigua.
 
+## 1.8.0 - 2026-10-26
+
+### Agregado
+
+- **Soporte de mando** (`mando.py`): navegación de todos los menús y control de
+  la partida con un mando de PlayStation o Xbox, por USB o Bluetooth. Los
+  controles de PlayStation se normalizan con SDL, así que `Cross`/`Circle`/
+  `Options`/`Share` funcionan igual que `A`/`B`/`Start`/`Back`. Si el mando no
+  tiene mapping, se usa el respaldo crudo de `pygame.joystick`.
+- **Detección en caliente**: el mando se abre al arrancar y se puede conectar o
+  desconectar durante la partida. Al desconectarse se sueltan los controles para
+  que el personaje no quede agachado ni una dirección trabada.
+- **Zona muerta y repetición**: el stick izquierdo ignora el temblor y las
+  direcciones se repiten al mantenerlas en los menús. En la partida no se
+  repiten: arriba salta y abajo agacha mientras se mantiene.
+- **Mapeo por escena**: `A`/`Cross` confirma y salta, `B`/`Circle` vuelve y
+  agacha, `Options`/`Start` confirma, `Share`/`Back` vuelve, y el D-pad o el
+  stick navegan. En las iniciales, `B`/`Circle` borra una letra.
+- **Sexta página del tutorial** y avisos de mando en el título, la elección de
+  equipo, el game over, las iniciales y la partida.
+- 19 pruebas nuevas para el mando (176 en total).
+
+### Cambiado
+
+- `Juego` consulta el mando una vez por fotograma y traduce sus acciones a los
+  mismos eventos de teclado que ya usan las escenas. El teclado y el ratón
+  siguen funcionando al mismo tiempo.
+- Cada escena declara su `MAPEO_MANDO`; `EscenaJuego` usa salto y agachado, y
+  `EscenaIniciales` usa `BACKSPACE` para el botón secundario.
+- Al abrir la consola o cambiar de escena se sueltan las teclas del mando y se
+  espera a que el stick vuelva al centro antes de mover la pantalla siguiente.
+- `README.md` documenta los controles de teclado, ratón y mando, y agrega
+  `mando.py` a la estructura del proyecto.
+
+### Corregido
+
+- Se corrigieron los textos del tutorial `ESCPACIO` y `SALTEAR IR PARA ATRAS`.
+
+## 1.7.0 - 2026-10-26
+
+### Agregado
+
+- **Tutorial de bienvenida** (`EscenaTutorial`): cinco páginas con los controles
+  y el objetivo. Aparece la primera vez que se juega, se puede volver a abrir con
+  `T` desde el título y se marca como visto al terminarlo o saltearlo con `ESC`.
+- **Consola de comandos (F12)** (`consola.py`): overlay al estilo CS2 que se abre
+  desde cualquier escena. La partida sigue corriendo detrás, pero los eventos van
+  solo a la consola. Incluye historial con `↑`/`↓`, autocompletado con `TAB`,
+  scroll con `PageUp`/`PageDown` y rueda, y `F12`/`` ` ``/`ESC` para cerrar.
+- **Comandos**: `help`, `cheats`, `god`, `wallhack`, `jumper`, `speedyg`,
+  `tutorial`, `sonido on|off`, `tutorial_auto on|off`, `restart`, `menu`,
+  `spawn`, `rank`, `clear` y `quit`, con alias en español.
+- **Cheats** en `Juego.cheats`: `god` evita los choques, `wallhack` marca el borde
+  de las personas, `jumper` duplica la velocidad del salto (cuádruple de altura)
+  y `speedyg` duplica la velocidad de la partida. Se prenden y apagan solo desde
+  la consola.
+- **Configuración** (`config.json`): guarda si el tutorial ya se vio, si el
+  tutorial automático está activo y si el sonido está activo. Se escribe de forma
+  atómica y, si falta o está roto, se usan los valores por defecto.
+- **Control de audio** (`sonido.set_activo()` y `SONIDO_ACTIVO`): permite
+  silenciar todos los SFX desde la consola.
+- 38 pruebas nuevas para tutorial, config, cheats, consola, comandos y el sprite
+  de muerte (157 en total).
+
+### Cambiado
+
+- El título ahora muestra `SPACE/ENTER: JUGAR · T: TUTORIAL · ESC: SALIR` y
+  decide entre tutorial y elección de equipo según la configuración.
+- `EscenaJuego.liberar_controles()` suelta el agachado de teclado y ratón cuando
+  se abre la consola, para que ningún control quede trabado.
+- El escalado de obstáculos y fondo usa `_velocidad_actual()`, que aplica
+  `speedyg` sin duplicar la fórmula de dificultad.
+- `generar_ranking` y `guardar_config` escriben con `newline="\n"` para respetar
+  el `eol=lf` de `.gitattributes` y no ensuciar el área de trabajo.
+
+### Corregido
+
+- `personaje.cargar_muerto()` escala el sprite muerto a `ALTO_PERSONAJE`; antes
+  llamaba a `_escalar` con argumentos incompatibles y el dibujo quedaba mal.
+- Se eliminó el bloque inalcanzable que quedaba al final de `personaje._escalar()`.
+- Se quitó el buffer oculto de letras que procesaba los cheats: ahora el único
+  canal es la consola, así que escribir una letra suelta ya no activa nada.
+
 ## 1.6.0 - 2026-10-23
 
 ### Agregado
