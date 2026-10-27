@@ -22,7 +22,11 @@ RUTA_PERSONAJES = "assets/personajes"
 
 
 def cargar_muerto(equipo="CT"):
-    """Carga el sprite muerto del jugador para ese equipo."""
+    """Carga el sprite muerto del jugador para ese equipo.
+
+    El sprite esta acostado, asi que se escala por ANCHO: escalarlo por alto lo
+    dejaba tres veces mas ancho que el personaje de pie.
+    """
     ruta = os.path.join(RUTA_PERSONAJES, equipo.lower(), "muerto.png")
     try:
         imagen = pygame.image.load(ruta)
@@ -34,7 +38,7 @@ def cargar_muerto(equipo="CT"):
     if (caja.x, caja.y, caja.w, caja.h) != (0, 0, imagen.get_width(), imagen.get_height()):
         imagen = imagen.subsurface(caja).copy()
     try:
-        return _escalar(imagen, constantes.ALTO_PERSONAJE)
+        return _escalar(imagen, 1, constantes.ANCHO_PERSONAJE_MUERTO)
     except Exception:
         return None
 

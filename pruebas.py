@@ -1657,7 +1657,11 @@ def _el_muerto_se_escala_al_personaje():
         imagen = personaje.cargar_muerto(equipo)
         if imagen is None:
             return False
-        if imagen.get_height() != constantes.ALTO_PERSONAJE:
+        if imagen.get_width() != constantes.ANCHO_PERSONAJE_MUERTO:
+            return False
+        # Acostado: el alto tiene que quedar muy por debajo del personaje de
+        # pie. Si se escala por alto, el ancho se dispara a ~250 px.
+        if imagen.get_height() >= constantes.ALTO_PERSONAJE:
             return False
     return True
 
@@ -1959,6 +1963,38 @@ class ControladorFalso:
         self.conectado = False
 
 
+class JoystickFalso:
+    """Un joystick crudo de mentira, para probar hats y botones sin SDL."""
+
+    def __init__(self, hats=(), botones=(), cantidad_botones=None, ejes=None):
+        self.hats = list(hats)
+        self.botones = set(botones)
+        self.cantidad_botones = (
+            cantidad_botones
+            if cantidad_botones is not None
+            else (max(self.botones) + 1 if self.botones else 0)
+        )
+        self.ejes = dict(ejes or {})
+
+    def get_numhats(self):
+        return len(self.hats)
+
+    def get_hat(self, indice):
+        return self.hats[indice]
+
+    def get_numbuttons(self):
+        return self.cantidad_botones
+
+    def get_button(self, boton):
+        return boton in self.botones
+
+    def get_axis(self, eje):
+        return self.ejes.get(eje, 0.0)
+
+    def quit(self):
+        pass
+
+
 def mando_de_prueba():
     """Un Mando con un controlador falso, ya enganchado."""
     controlador = ControladorFalso()
@@ -1995,10 +2031,40 @@ def _mando_mapea_direcciones():
 def _mando_usa_el_stick_con_zona_muerta():
     return (
         mando.direccion_de_ejes(0.2, 0.1) is None
+        and mando.direccion_de_ejes(
+            0.4, 0.1, constantes.MANDO_ZONA_MUERTA
+        ) == "derecha"
         and mando.direccion_de_ejes(0.9, 0.1) == "derecha"
         and mando.direccion_de_ejes(-0.1, -0.9) == "arriba"
         and mando.direccion_de_ejes(0.1, 0.9) == "abajo"
     )
+
+
+def _mando_normaliza_los_ejes_crudos():
+    """El controlador entrega enteros crudos de SDL, no floats de -1 a 1."""
+    return (
+        mando.direccion_de_ejes(2441, 128) is None
+        and mando.direccion_de_ejes(-2955, 128) is None
+        and mando.direccion_de_ejes(32767, 0) == "derecha"
+        and mando.direccion_de_ejes(-32768, 0) == "izquierda"
+        and mando.direccion_de_ejes(0, 32767) == "abajo"
+        and mando.direccion_de_ejes(0, -32768) == "arriba"
+    )
+
+
+def _mando_no_bloquea_el_dpad_por_deriva_del_stick():
+    """Un stick crudo en reposo no puede tragarse las flechas del D-pad."""
+    controlador = ControladorFalso()
+    controlador.ejes[mando.EJE_X] = 2441
+    controlador.ejes[mando.EJE_Y] = 128
+    dispositivo = mando.Mando(controlador=controlador)
+
+    deriva = dispositivo.actualizar(DELTA) == []
+
+    controlador.botones.add(mando.BOTON_DERECHA)
+    return deriva and dispositivo.actualizar(DELTA) == [
+        ("derecha", True, False)
+    ]
 
 
 def _mando_lee_el_hat():
@@ -2009,6 +2075,45 @@ def _mando_lee_el_hat():
         and mando.direccion_de_hat((-1, 0)) == "izquierda"
         and mando.direccion_de_hat((1, 0)) == "derecha"
     )
+
+
+def _mando_lee_el_dpad_del_hat():
+    """El D-pad que no responde como boton normalizado pero si como hat."""
+    dispositivo, _ = mando_de_prueba()
+    dispositivo._joystick = JoystickFalso(
+        hats=[(1, 0)], cantidad_botones=14
+    )
+    return dispositivo.actualizar(DELTA) == [("derecha", True, False)]
+
+
+def _mando_lee_el_dpad_crudo():
+    """El D-pad de un mando sin mapping, expuesto como botones 11-14."""
+    dispositivo = mando.Mando(autodetectar=False)
+    dispositivo._modo = "crudo"
+    dispositivo._joystick = JoystickFalso(
+        hats=[], botones={13}, cantidad_botones=18
+    )
+    return dispositivo.actualizar(DELTA) == [("izquierda", True, False)]
+
+
+def _mando_no_confunde_r3_con_el_dpad():
+    """Con hat y 14 botones, los indices 11-14 no son el D-pad."""
+    dispositivo = mando.Mando(autodetectar=False)
+    dispositivo._modo = "crudo"
+    dispositivo._joystick = JoystickFalso(
+        hats=[(0, 0)], botones={11}, cantidad_botones=14
+    )
+    return dispositivo.actualizar(DELTA) == []
+
+
+def _mando_abre_el_tutorial():
+    stub = juego_stub()
+    escena = juego.EscenaTitulo(stub)
+    escena.inicializar()
+    stub, controlador = _juego_con_mando(escena)
+    controlador.botones.add(mando.BOTON_Y)
+    juego.Juego.actualizar(stub, DELTA)
+    return stub.cambio_de_escena == "tutorial"
 
 
 def _mando_repite_direcciones():
@@ -2051,14 +2156,18 @@ def _mapeo_de_mando_por_escena():
     equipo = escena_de_equipo()
     iniciales = juego.EscenaIniciales(juego_stub())
     iniciales.inicializar()
+    titulo = juego.EscenaTitulo(juego_stub())
+    titulo.inicializar()
     return (
         partida.tecla_de_mando("confirmar") == pygame.K_SPACE
         and partida.tecla_de_mando("secundario") == pygame.K_DOWN
         and partida.tecla_de_mando("inicio") is None
         and partida.tecla_de_mando("atras") == pygame.K_ESCAPE
+        and partida.tecla_de_mando("tutorial") is None
         and equipo.tecla_de_mando("confirmar") == pygame.K_RETURN
         and equipo.tecla_de_mando("secundario") == pygame.K_ESCAPE
         and iniciales.tecla_de_mando("secundario") == pygame.K_BACKSPACE
+        and titulo.tecla_de_mando("tutorial") == pygame.K_t
     )
 
 
@@ -2180,11 +2289,18 @@ def _mando_maneja_eventos_de_conexion():
     dispositivo = mando.Mando(autodetectar=False)
     removido = pygame.event.Event(pygame.JOYDEVICEREMOVED, instance_id=0)
     agregado = pygame.event.Event(pygame.JOYDEVICEADDED, device_index=0)
-    return (
-        dispositivo.manejar_evento(removido)
-        and dispositivo.manejar_evento(agregado)
-        and not dispositivo.activo
-    )
+    # La prueba no depende de que haya un mando fisico conectado: se simula
+    # que no hay ninguno, que es el caso en el que el juego tiene que seguir.
+    conectar_original = dispositivo.conectar
+    dispositivo.conectar = lambda: False
+    try:
+        return (
+            dispositivo.manejar_evento(removido)
+            and dispositivo.manejar_evento(agregado)
+            and not dispositivo.activo
+        )
+    finally:
+        dispositivo.conectar = conectar_original
 
 
 def _teclado_sigue_funcionando_con_mando():
@@ -2461,8 +2577,23 @@ def casos():
         ("el stick usa zona muerta y elige un solo eje",
          _mando_usa_el_stick_con_zona_muerta),
 
+        ("los ejes crudos del controlador se normalizan antes de la zona muerta",
+         _mando_normaliza_los_ejes_crudos),
+
+        ("la deriva del stick crudo no bloquea el D-pad",
+         _mando_no_bloquea_el_dpad_por_deriva_del_stick),
+
         ("el D-pad expuesto como hat se traduce igual",
          _mando_lee_el_hat),
+
+        ("en modo normalizado el D-pad tambien se lee del hat",
+         _mando_lee_el_dpad_del_hat),
+
+        ("sin mapping el D-pad se lee de los botones crudos 11-14",
+         _mando_lee_el_dpad_crudo),
+
+        ("los botones crudos 11-14 no se confunden con R3/PS/touchpad",
+         _mando_no_confunde_r3_con_el_dpad),
 
         ("mantener una direccion en un menu la repite",
          _mando_repite_direcciones),
@@ -2478,6 +2609,9 @@ def casos():
 
         ("A/Cross confirma en el titulo",
          _mando_confirma_en_el_titulo),
+
+        ("Triangulo/Y abre el tutorial desde el titulo",
+         _mando_abre_el_tutorial),
 
         ("el D-pad elige equipo y A/Cross confirma",
          _mando_navega_la_eleccion),
@@ -2699,7 +2833,7 @@ def casos():
         ("wallhack dibuja el borde de las personas",
          _wallhack_marca_las_personas),
 
-        ("el sprite de muerto se escala al alto del personaje",
+        ("el sprite de muerto se escala al ancho del personaje",
          _el_muerto_se_escala_al_personaje),
 
         # --- La consola de comandos

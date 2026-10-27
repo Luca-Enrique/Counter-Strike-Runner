@@ -28,6 +28,7 @@ def _constante(nombre, defecto):
 # Start es Options y Back es Share. En Xbox son A, B, Start y Back.
 BOTON_A = _constante("CONTROLLER_BUTTON_A", 0)
 BOTON_B = _constante("CONTROLLER_BUTTON_B", 1)
+BOTON_Y = _constante("CONTROLLER_BUTTON_Y", 3)
 BOTON_BACK = _constante("CONTROLLER_BUTTON_BACK", 4)
 BOTON_START = _constante("CONTROLLER_BUTTON_START", 6)
 BOTON_ARRIBA = _constante("CONTROLLER_BUTTON_DPAD_UP", 11)
@@ -40,6 +41,7 @@ EJE_Y = _constante("CONTROLLER_AXIS_LEFTY", 1)
 BOTONES_NORMALIZADOS = (
     (BOTON_A, "confirmar"),
     (BOTON_B, "secundario"),
+    (BOTON_Y, "tutorial"),
     (BOTON_START, "inicio"),
     (BOTON_BACK, "atras"),
 )
@@ -47,6 +49,7 @@ BOTONES_NORMALIZADOS = (
 BOTONES_CRUDOS = (
     (constantes.MANDO_BOTON_A_CRUDO, "confirmar"),
     (constantes.MANDO_BOTON_B_CRUDO, "secundario"),
+    (constantes.MANDO_BOTON_TUTORIAL_CRUDO, "tutorial"),
     (constantes.MANDO_BOTON_START_CRUDO, "inicio"),
     (constantes.MANDO_BOTON_BACK_CRUDO, "atras"),
 )
@@ -127,14 +130,32 @@ def direccion_de_botones(arriba, abajo, izquierda, derecha):
     return None
 
 
+def normalizar_eje(valor):
+    """Pasa un eje a la escala -1..1.
+
+    ``pygame._sdl2.controller.Controller.get_axis()`` devuelve el valor crudo
+    de SDL (``-32768..32767``), mientras que ``pygame.joystick.get_axis()``
+    devuelve floats. Se aceptan las dos formas: un valor fuera de ``-1..1`` se
+    considera crudo y se divide por ``32768``.
+    """
+    valor = float(valor or 0.0)
+    if abs(valor) > 1.0:
+        return max(-1.0, min(1.0, valor / 32768.0))
+    return valor
+
+
 def direccion_de_ejes(x, y, zona_muerta=constantes.MANDO_ZONA_MUERTA):
     """La direccion dominante del stick, o None si esta dentro de la zona muerta.
+
+    Los ejes se normalizan primero, porque el camino del controlador entrega
+    enteros crudos y el del joystick floats. La zona muerta se aplica siempre
+    sobre la escala ``-1..1``.
 
     Se elige un solo eje para que un movimiento diagonal no dispare dos
     acciones a la vez. En SDL, el eje Y crece hacia abajo.
     """
-    x = x or 0.0
-    y = y or 0.0
+    x = normalizar_eje(x)
+    y = normalizar_eje(y)
     if abs(x) < zona_muerta and abs(y) < zona_muerta:
         return None
     if abs(y) >= abs(x):
@@ -346,19 +367,29 @@ class Mando:
         return estado
 
     def _leer_direccion(self):
-        """La direccion actual del D-pad o del stick izquierdo."""
+        """La direccion actual del D-pad o del stick izquierdo.
+
+        Se prueban todas las formas en que un mando puede exponer el D-pad:
+        botones normalizados, hats y botones crudos. Algunos DualShock en
+        Windows no responden a los botones normalizados 11-14 pero si al hat,
+        y otros al reves, asi que no alcanza con un solo camino.
+        """
         if self._modo == "controlador" and self._controlador is not None:
             try:
-                direccion = direccion_de_botones(
-                    self._controlador.get_button(BOTON_ARRIBA),
-                    self._controlador.get_button(BOTON_ABAJO),
-                    self._controlador.get_button(BOTON_IZQUIERDA),
-                    self._controlador.get_button(BOTON_DERECHA),
-                )
+                direccion = self._leer_botones_direccion_normalizados()
             except Exception:
                 direccion = None
             if direccion is not None:
                 return direccion
+
+            # Respaldo: el D-pad puede estar solo en el joystick crudo.
+            direccion = self._leer_hats()
+            if direccion is not None:
+                return direccion
+            direccion = self._leer_botones_direccion_crudos()
+            if direccion is not None:
+                return direccion
+
             try:
                 return direccion_de_ejes(
                     self._controlador.get_axis(EJE_X),
@@ -369,12 +400,10 @@ class Mando:
                 return None
 
         if self._modo == "crudo" and self._joystick is not None:
-            try:
-                direccion = direccion_de_hat(
-                    self._joystick.get_hat(constantes.MANDO_HAT_CRUDO)
-                )
-            except Exception:
-                direccion = None
+            direccion = self._leer_hats()
+            if direccion is not None:
+                return direccion
+            direccion = self._leer_botones_direccion_crudos()
             if direccion is not None:
                 return direccion
             try:
@@ -387,6 +416,62 @@ class Mando:
                 return None
 
         return None
+
+    def _leer_botones_direccion_normalizados(self):
+        """El D-pad como botones 11-14 de la API normalizada."""
+        if self._controlador is None:
+            return None
+        return direccion_de_botones(
+            self._controlador.get_button(BOTON_ARRIBA),
+            self._controlador.get_button(BOTON_ABAJO),
+            self._controlador.get_button(BOTON_IZQUIERDA),
+            self._controlador.get_button(BOTON_DERECHA),
+        )
+
+    def _leer_hats(self):
+        """La direccion de cualquiera de los hats del joystick crudo."""
+        if self._joystick is None:
+            return None
+        try:
+            cantidad = self._joystick.get_numhats()
+        except Exception:
+            cantidad = 0
+        for indice in range(cantidad):
+            try:
+                direccion = direccion_de_hat(self._joystick.get_hat(indice))
+            except Exception:
+                continue
+            if direccion is not None:
+                return direccion
+        return None
+
+    def _leer_botones_direccion_crudos(self):
+        """El D-pad como botones 11-14 del joystick crudo.
+
+        Se evita leer esos indices cuando el mando ya tiene un hat y menos de
+        15 botones: ahi los indices 11-14 son R3/PS/touchpad en un DualShock y
+        leerlos como D-pad moveria el menu al apretarlos.
+        """
+        if self._joystick is None:
+            return None
+        try:
+            hats = self._joystick.get_numhats()
+            botones = self._joystick.get_numbuttons()
+        except Exception:
+            return None
+        if hats > 0 and botones < 15:
+            return None
+        if botones <= max(constantes.MANDO_BOTONES_DIRECCION_CRUDOS):
+            return None
+        try:
+            return direccion_de_botones(
+                self._joystick.get_button(constantes.MANDO_BOTON_ARRIBA_CRUDO),
+                self._joystick.get_button(constantes.MANDO_BOTON_ABAJO_CRUDO),
+                self._joystick.get_button(constantes.MANDO_BOTON_IZQUIERDA_CRUDO),
+                self._joystick.get_button(constantes.MANDO_BOTON_DERECHA_CRUDO),
+            )
+        except Exception:
+            return None
 
     def _sigue_conectado(self):
         """False si el controlador avisa que ya no esta conectado."""

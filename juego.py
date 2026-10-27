@@ -360,6 +360,9 @@ class EscenaTitulo(Escena):
     personaje van en la pantalla siguiente.
     """
 
+    # Triangulo (Y en Xbox) abre el tutorial desde el titulo, igual que la T.
+    MAPEO_MANDO = dict(Escena.MAPEO_MANDO, tutorial=pygame.K_t)
+
     def __init__(self, juego):
         super().__init__(juego)
         self.fondo = None
@@ -434,7 +437,7 @@ class EscenaTitulo(Escena):
 
         dibujar_texto_centrado_en(
             superficie,
-            "SPACE/ENTER/A: JUGAR   ·   T: TUTORIAL   ·   ESC/B: SALIR",
+            "SPACE/ENTER/A: JUGAR   ·   T/TRIÁNGULO: TUTORIAL   ·   ESC/B: SALIR",
             self.juego.fuentes["etiqueta"],
             constantes.COLOR_LETRA_INACTIVA,
             centro_x,
@@ -460,6 +463,7 @@ class EscenaTutorial(Escena):
             [
                 "EN LOS MENUS: D-PAD O STICK PARA MOVERTE",
                 "A: CONFIRMAR   ·   B: VOLVER",
+                "TRIÁNGULO: ABRIR TUTORIAL (TITULO)",
             ],
             [
                 "APRETA ESPACIO / ENTER / A PARA AVANZAR",

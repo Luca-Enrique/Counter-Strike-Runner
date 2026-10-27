@@ -92,6 +92,9 @@ JUGADOR_X = 120
 # estetica: si se perdiera, habria obstaculos imposibles de pasar.
 ALTO_PERSONAJE = 96
 ALTO_PERSONAJE_AGACHADO = 56
+# El sprite de muerto esta acostado: si se escala por alto queda enorme de
+# ancho. Se escala por ancho, que es lo que mide el personaje de pie.
+ANCHO_PERSONAJE_MUERTO = 96
 
 # Ancho con el que se arma el rectangulo del personaje cuando no hay sprite
 # (por ejemplo en las pruebas). Si hay sprite manda el ancho real de la
@@ -307,8 +310,10 @@ SEGUNDOS_CURSOR_CONSOLA = 0.5
 
 # --- Mando ---------------------------------------------------------------
 # El stick izquierdo tiene que moverse mas que esto para contar como direccion.
-# Sin zona muerta, el mando tiembla solo y el menu se mueve sin querer.
-MANDO_ZONA_MUERTA = 0.55
+# Sin zona muerta, el mando tiembla solo y el menu se mueve sin querer. Se deja
+# baja para que un DualShock/DualSense viejo (que no llega a 0.8) tambien mueva.
+# Se aplica sobre los ejes ya normalizados a -1..1 (ver mando.normalizar_eje).
+MANDO_ZONA_MUERTA = 0.35
 
 # Repeticion de las direcciones al mantener apretado el D-pad o el stick.
 # Primero se espera un poco (para no repetir un toque corto) y despues se
@@ -321,8 +326,23 @@ MANDO_INTERVALO_REPETICION = 0.14
 # (CONTROLLER_BUTTON_*), que funcionan igual en Xbox y PlayStation.
 MANDO_BOTON_A_CRUDO = 0
 MANDO_BOTON_B_CRUDO = 1
+MANDO_BOTON_TUTORIAL_CRUDO = 3
 MANDO_BOTON_BACK_CRUDO = 6
 MANDO_BOTON_START_CRUDO = 7
 MANDO_HAT_CRUDO = 0
 MANDO_EJE_X_CRUDO = 0
 MANDO_EJE_Y_CRUDO = 1
+
+# Algunos mandos (sobre todo DualShock/DualSense en Windows) no exponen el
+# D-pad como hat sino como cuatro botones crudos. Se prueban estos indices
+# despues de mirar los hats.
+MANDO_BOTON_ARRIBA_CRUDO = 11
+MANDO_BOTON_ABAJO_CRUDO = 12
+MANDO_BOTON_IZQUIERDA_CRUDO = 13
+MANDO_BOTON_DERECHA_CRUDO = 14
+MANDO_BOTONES_DIRECCION_CRUDOS = (
+    MANDO_BOTON_ARRIBA_CRUDO,
+    MANDO_BOTON_ABAJO_CRUDO,
+    MANDO_BOTON_IZQUIERDA_CRUDO,
+    MANDO_BOTON_DERECHA_CRUDO,
+)
