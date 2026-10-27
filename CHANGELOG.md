@@ -2,6 +2,37 @@
 
 Los cambios del proyecto, de la versión más reciente a la más antigua.
 
+## 1.8.1 - 2026-10-27
+
+### Corregido
+
+- **Direcciones del mando en menús y partida**: el D-pad se lee ahora por
+  botones normalizados, por el `hat` del joystick y por los botones crudos
+  11-14. Antes un DualShock/DualSense que no respondía a los botones
+  normalizados dejaba las flechas sin efecto.
+- La zona muerta del stick baja de `0.55` a `0.35` para que un mando gastado
+  también registre la dirección.
+- **Ejes del stick normalizados**: `pygame._sdl2.controller` devuelve los ejes
+  en escala cruda de SDL (`-32768..32767`), no en `-1..1`. Se agregó
+  `mando.normalizar_eje()` y la zona muerta ahora se aplica sobre los ejes
+  normalizados. Antes un valor de reposo como `2441` se leía como "derecha",
+  dejaba el stick trabado y el juego descartaba también las flechas del D-pad.
+- Se evita leer los botones crudos 11-14 como D-pad cuando el mando ya expone
+  un `hat` y tiene menos de 15 botones (ahí son R3/PS/touchpad en un PS4).
+- **Sprite de muerte**: `cargar_muerto()` escala por ancho
+  (`ANCHO_PERSONAJE_MUERTO`) en vez de por alto. Antes el cadáver quedaba en
+  251x96 px contra los 76x96 del personaje de pie.
+- Se actualizó la prueba del sprite de muerte para verificar el ancho y que el
+  alto quede por debajo del personaje.
+
+### Agregado
+
+- `Triángulo`/`Y` abre el tutorial desde el título, igual que `T`. Se agregó la
+  acción `tutorial` al mapeo del mando y la pista en el título y el tutorial.
+- Pruebas nuevas para el D-pad por `hat`, por botones crudos, para no confundir
+  R3 con el D-pad, para normalizar los ejes crudos del controlador y para
+  verificar que la deriva del stick no bloquea el D-pad.
+
 ## 1.8.0 - 2026-10-26
 
 ### Agregado

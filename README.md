@@ -44,8 +44,8 @@ python juego.py
 - Escenas: título, tutorial, elección de equipo, partida, game over e ingreso de
   iniciales.
 - Tutorial: la primera vez que se juega aparece un recorrido de seis páginas
-  antes de elegir equipo. Se puede volver a abrir con `T` desde el título o con
-  el comando `tutorial` de la consola.
+  antes de elegir equipo. Se puede volver a abrir con `T` o `Triángulo`/`Y`
+  desde el título, o con el comando `tutorial` de la consola.
 - Partida: salto, agachado, obstáculos, colisión, puntaje, fondos por zona y
   suelo con parallax.
 - Mando: se puede jugar y navegar todos los menús con un mando de PlayStation o
@@ -71,6 +71,7 @@ python juego.py
 | Confirmar | `SPACE`, `ENTER` o click izquierdo | `Cross` (A) u `Options` (Start) |
 | Volver | `ESC` | `Circle` (B) o `Share` (Back) |
 | Navegar menús | `A`/`D`, flechas o el ratón | D-pad o stick izquierdo |
+| Abrir tutorial (título) | `T` | `Triángulo` (Y) |
 | Borrar en iniciales | `BACKSPACE` | `Circle` (B) |
 
 En la partida, `Cross` salta y `Circle` agacha mientras se mantiene apretado.
@@ -78,7 +79,11 @@ En los menús, el D-pad y el stick repiten el movimiento si se mantienen. El
 mando se detecta solo al arrancar y también si se conecta después; si se
 desconecta, el juego suelta el agachado para que el personaje no quede trabado.
 Los mandos de PlayStation se normalizan con SDL, así que `Cross`/`Circle`/
-`Options`/`Share` funcionan igual que `A`/`B`/`Start`/`Back` de Xbox.
+`Options`/`Share` funcionan igual que `A`/`B`/`Start`/`Back` de Xbox. El D-pad
+se lee por botones normalizados, por `hat` y por botones crudos 11-14, así que
+también funciona en mandos que Windows expone sin mapping. Los ejes del stick se
+normalizan a `-1..1` antes de aplicar la zona muerta, así que la deriva del mando
+en reposo no mueve el menú ni bloquea el D-pad.
 
 ## Consola de comandos (F12)
 
