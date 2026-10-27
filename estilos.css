@@ -1,0 +1,264 @@
+/* Estilos de ranking.html. Estetica de recreativa y scoreboard de CS. */
+
+:root {
+  --fondo: #050805;
+  --panel: #0a120c;
+  --panel-claro: #101b12;
+  --verde: #66ff99;
+  --verde-apagado: #2f8f57;
+  --ambar: #ffce4a;
+  --rojo: #ff5b5b;
+  --texto: #d8ffe4;
+  --gris: #7da88a;
+  --borde: #1f4a2d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 32px 16px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(102, 255, 153, 0.12), transparent 55%),
+    linear-gradient(180deg, #071009 0%, var(--fondo) 70%);
+  color: var(--texto);
+  font-family: "Courier New", Courier, monospace;
+  letter-spacing: 0.04em;
+}
+
+/* Scanlines y un brillo suave, como el monitor de una maquina arcade. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0) 0,
+    rgba(0, 0, 0, 0) 2px,
+    rgba(0, 0, 0, 0.22) 3px,
+    rgba(0, 0, 0, 0.22) 4px
+  );
+  mix-blend-mode: multiply;
+}
+
+.ranking {
+  width: min(1080px, 100%);
+  margin: 0 auto;
+  animation: encender 500ms ease-out both;
+}
+
+.ranking__cabecera {
+  margin-bottom: 22px;
+  text-align: center;
+  text-shadow: 0 0 14px rgba(102, 255, 153, 0.45);
+}
+
+.ranking__marca {
+  margin: 0 0 6px;
+  color: var(--ambar);
+  font-size: clamp(0.7rem, 1.6vw, 0.9rem);
+  font-weight: 700;
+  letter-spacing: 0.35em;
+}
+
+.ranking h1 {
+  margin: 0;
+  color: var(--verde);
+  font-size: clamp(1.8rem, 5vw, 3.5rem);
+  line-height: 1;
+  letter-spacing: 0.08em;
+}
+
+.ranking__subtitulo {
+  margin: 10px 0 0;
+  color: var(--gris);
+  font-size: clamp(0.65rem, 1.4vw, 0.85rem);
+  letter-spacing: 0.22em;
+}
+
+.ranking__marco {
+  overflow-x: auto;
+  border: 2px solid var(--borde);
+  border-radius: 4px;
+  background: linear-gradient(180deg, var(--panel-claro), var(--panel));
+  box-shadow:
+    0 0 0 1px rgba(102, 255, 153, 0.08) inset,
+    0 0 36px rgba(102, 255, 153, 0.12);
+}
+
+.ranking__tabla {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  font-size: clamp(0.72rem, 1.5vw, 0.95rem);
+}
+
+.ranking__tabla th,
+.ranking__tabla td {
+  padding: 13px 10px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.ranking__tabla thead th {
+  border-bottom: 2px solid var(--verde-apagado);
+  background: rgba(102, 255, 153, 0.07);
+  color: var(--ambar);
+  font-size: 0.78em;
+  letter-spacing: 0.16em;
+}
+
+.ranking__tabla tbody tr {
+  border-bottom: 1px solid rgba(47, 143, 87, 0.28);
+  transition: background-color 120ms linear;
+}
+
+.ranking__tabla tbody tr:nth-child(even) {
+  background: rgba(102, 255, 153, 0.025);
+}
+
+.ranking__tabla tbody tr:hover {
+  background: rgba(102, 255, 153, 0.1);
+}
+
+.ranking__tabla tbody tr:last-child {
+  border-bottom: 0;
+}
+
+.pos {
+  color: var(--gris);
+  font-weight: 700;
+}
+
+.iniciales {
+  color: var(--texto);
+  font-size: 1.12em;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+
+.score {
+  color: var(--verde);
+  font-size: 1.12em;
+  font-weight: 700;
+  text-shadow: 0 0 10px rgba(102, 255, 153, 0.35);
+}
+
+.k,
+.d {
+  color: var(--texto);
+}
+
+.kd {
+  color: var(--ambar);
+  font-weight: 700;
+}
+
+.fecha {
+  color: var(--gris);
+  font-size: 0.88em;
+}
+
+.equipo {
+  display: inline-block;
+  min-width: 2.6em;
+  padding: 2px 6px;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  font-size: 0.82em;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.equipo--ct {
+  color: #7fbfff;
+}
+
+.equipo--t {
+  color: #ffc46b;
+}
+
+/* Podio: las tres primeras filas se distinguen de un vistazo. */
+.fila--oro .pos,
+.fila--oro .iniciales {
+  color: #ffd75e;
+  text-shadow: 0 0 12px rgba(255, 215, 94, 0.55);
+}
+
+.fila--plata .pos,
+.fila--plata .iniciales {
+  color: #d9e6ee;
+  text-shadow: 0 0 10px rgba(217, 230, 238, 0.35);
+}
+
+.fila--bronce .pos,
+.fila--bronce .iniciales {
+  color: #d9935b;
+  text-shadow: 0 0 10px rgba(217, 147, 91, 0.35);
+}
+
+.vacio {
+  padding: 44px 18px !important;
+  color: var(--gris);
+  line-height: 1.8;
+}
+
+.ranking__pie {
+  margin-top: 18px;
+  color: var(--gris);
+  font-size: clamp(0.62rem, 1.3vw, 0.78rem);
+  text-align: center;
+  letter-spacing: 0.1em;
+}
+
+.ranking__pie p {
+  margin: 6px 0;
+}
+
+.ranking__parpadeo {
+  color: var(--ambar);
+  animation: parpadear 1.4s steps(2, start) infinite;
+}
+
+@keyframes parpadear {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes encender {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (max-width: 640px) {
+  body {
+    padding: 18px 8px;
+  }
+
+  .ranking__tabla th,
+  .ranking__tabla td {
+    padding: 10px 7px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ranking,
+  .ranking__parpadeo {
+    animation: none;
+  }
+}
